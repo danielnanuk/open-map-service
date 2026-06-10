@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/danielnanuk/open-map-service/gateway/internal/search"
+	"github.com/danielnanuk/open-map-service/gateway/internal/store"
 )
 
 type fakeSearcher struct{ docs []search.Doc }
@@ -168,5 +169,61 @@ func TestAutocompleteEmptyReturnsEmptyArray(t *testing.T) {
 	h.Autocomplete(rec, req)
 	if !strings.Contains(rec.Body.String(), `"suggestions":[]`) {
 		t.Fatalf("want suggestions:[], got %s", rec.Body.String())
+	}
+}
+
+type fakeStore struct{ row *store.PlaceRow }
+
+func (f *fakeStore) GetPlace(_ context.Context, id string) (*store.PlaceRow, error) {
+	if f.row != nil && f.row.PlaceID == id {
+		return f.row, nil
+	}
+	return nil, nil
+}
+
+func TestGetPlaceDetails(t *testing.T) {
+	row := &store.PlaceRow{
+		PlaceID:      "p1",
+		Names:        map[string]string{"default": "Malis", "km": "ម្លិះ"},
+		Categories:   []string{"restaurant"},
+		Phone:        "+855 15 814 888",
+		Website:      "https://malis.example",
+		OpeningHours: "Mo-Su 07:00-22:00",
+		Address:      map[string]string{"freeform": "St 123", "locality": "Phnom Penh"},
+		Lon:          104.916, Lat: 11.5621,
+	}
+	h := New(&fakeSearcher{}, &fakeStore{row: row})
+	req := httptest.NewRequest("GET", "/v1/places/p1?languageCode=km", nil)
+	req.SetPathValue("id", "p1")
+	rec := httptest.NewRecorder()
+	h.GetPlace(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	var place map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &place)
+	if place["displayName"].(map[string]any)["text"] != "ម្លិះ" {
+		t.Fatalf("km name expected: %v", place)
+	}
+	if place["internationalPhoneNumber"] != "+855 15 814 888" {
+		t.Fatalf("phone: %v", place)
+	}
+	if place["formattedAddress"] != "St 123, Phnom Penh, Cambodia" {
+		t.Fatalf("address: %v", place)
+	}
+	oh := place["regularOpeningHours"].(map[string]any)["weekdayDescriptions"].([]any)
+	if oh[0] != "Mo-Su 07:00-22:00" {
+		t.Fatalf("hours: %v", oh)
+	}
+}
+
+func TestGetPlaceNotFound(t *testing.T) {
+	h := New(&fakeSearcher{}, &fakeStore{})
+	req := httptest.NewRequest("GET", "/v1/places/nope", nil)
+	req.SetPathValue("id", "nope")
+	rec := httptest.NewRecorder()
+	h.GetPlace(rec, req)
+	if rec.Code != 404 || !strings.Contains(rec.Body.String(), "NOT_FOUND") {
+		t.Fatalf("want google-style 404, got %d %s", rec.Code, rec.Body.String())
 	}
 }

@@ -149,3 +149,47 @@ func (h *Handlers) SearchNearby(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, r, http.StatusOK, docsToPlacesResponse(docs, req.LanguageCode))
 }
+
+func formatAddress(addr map[string]string) string {
+	parts := []string{}
+	for _, k := range []string{"freeform", "locality", "region"} {
+		if v := addr[k]; v != "" && !strings.EqualFold(v, "Cambodia") {
+			parts = append(parts, v)
+		}
+	}
+	return strings.Join(append(parts, "Cambodia"), ", ")
+}
+
+func (h *Handlers) GetPlace(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	row, err := h.store.GetPlace(r.Context(), id)
+	if err != nil {
+		internal(w, err)
+		return
+	}
+	if row == nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "place not found: "+id)
+		return
+	}
+	lang := r.URL.Query().Get("languageCode")
+	primary, _, _ := strings.Cut(lang, "-") // BCP-47 → 主语言子标签
+	name := row.Names[strings.ToLower(primary)]
+	if name == "" {
+		name = row.Names["default"]
+	}
+	place := gapi.Place{
+		Name:                     "places/" + row.PlaceID,
+		ID:                       row.PlaceID,
+		DisplayName:              &gapi.LocalizedText{Text: name, LanguageCode: lang},
+		FormattedAddress:         formatAddress(row.Address),
+		Location:                 &gapi.LatLng{Latitude: row.Lat, Longitude: row.Lon},
+		Types:                    row.Categories,
+		InternationalPhoneNumber: row.Phone,
+		WebsiteURI:               row.Website,
+	}
+	if row.OpeningHours != "" {
+		// 简化:OSM opening_hours 原文作为单条 weekdayDescriptions,不解析为 periods(见 spec §4)
+		place.RegularOpeningHours = &gapi.OpeningHours{WeekdayDescriptions: []string{row.OpeningHours}}
+	}
+	writeJSON(w, r, http.StatusOK, place)
+}
