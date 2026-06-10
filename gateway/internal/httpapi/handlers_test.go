@@ -159,3 +159,14 @@ func TestAutocompleteEmptyInput(t *testing.T) {
 		t.Fatalf("want 400, got %d", rec.Code)
 	}
 }
+
+func TestAutocompleteEmptyReturnsEmptyArray(t *testing.T) {
+	h := New(&fakeSearcher{}, nil)
+	req := httptest.NewRequest("POST", "/v1/places:autocomplete",
+		strings.NewReader(`{"input":"xyz"}`))
+	rec := httptest.NewRecorder()
+	h.Autocomplete(rec, req)
+	if !strings.Contains(rec.Body.String(), `"suggestions":[]`) {
+		t.Fatalf("want suggestions:[], got %s", rec.Body.String())
+	}
+}

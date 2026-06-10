@@ -94,13 +94,16 @@ func (h *Handlers) SearchText(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, http.StatusOK, docsToPlacesResponse(docs, req.LanguageCode))
 }
 
+// autocompleteSuggestions 对齐 Google Autocomplete 的建议数上限。
+const autocompleteSuggestions = 5
+
 func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 	var req gapi.AutocompleteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Input == "" {
 		invalidArgument(w, "input is required")
 		return
 	}
-	docs, err := h.searcher.Autocomplete(r.Context(), req.Input, geoFromBias(req.LocationBias), 5)
+	docs, err := h.searcher.Autocomplete(r.Context(), req.Input, geoFromBias(req.LocationBias), autocompleteSuggestions)
 	if err != nil {
 		internal(w, err)
 		return
