@@ -37,13 +37,14 @@ class _POIHandler(osmium.SimpleHandler):
         tags = {t.k: t.v for t in n.tags}
         self._row(f"osm:node:{n.id}", tags, n.location.lon, n.location.lat)
 
+    # 注:线状 POI way 与 type=site relation 不会进入 area 回调,M1 接受该损失(实测 ~0.6%)
     def area(self, a):
         tags = {t.k: t.v for t in a.tags}
         if osm_to_google(tags) is None or not tags.get("name"):
             return
         try:
             point = shapely.from_wkb(bytes.fromhex(self._wkb.create_multipolygon(a))).representative_point()
-        except Exception:
+        except (RuntimeError, shapely.errors.ShapelyError):
             self.skipped += 1
             return
         kind = "way" if a.from_way() else "rel"                    # ★
