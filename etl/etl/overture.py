@@ -7,7 +7,7 @@ from etl.categories import overture_to_google
 
 CAMBODIA_BBOX = "102.33,9.90,107.63,14.70"
 
-# map_extract 返回 list,取 [1];struct 用点号访问。geometry 是 WKB blob。
+# geometry 是原生 GEOMETRY(OGC:CRS84),ST_X=lon、ST_Y=lat;map_extract 返回 list 取 [1],struct 用点号访问。
 _TRANSFORM_SQL = """
 INSTALL spatial; LOAD spatial;
 SELECT
@@ -32,14 +32,14 @@ WHERE names."primary" IS NOT NULL
 """
 
 def download(out_places: str, out_divisions: str) -> None:
-    # NOTE: overturemaps 1.0.0 uses -t flag (short form) instead of --type=
+    # NOTE: -t/--type are aliases; both work in overturemaps 1.0.0
     subprocess.run(["overturemaps", "download", f"--bbox={CAMBODIA_BBOX}",
                     "-f", "geoparquet", "-t", "place", "-o", out_places], check=True)
     subprocess.run(["overturemaps", "download", f"--bbox={CAMBODIA_BBOX}",
                     "-f", "geoparquet", "-t", "division_area", "-o", out_divisions], check=True)
 
 def transform(raw_parquet: str, out_parquet: str) -> int:
-    table = duckdb.sql(_TRANSFORM_SQL.replace("?", f"'{raw_parquet}'")).arrow().read_all()
+    table = duckdb.sql(_TRANSFORM_SQL, params=[raw_parquet]).arrow().read_all()
     gtypes = pa.array([overture_to_google(c) for c in table.column("raw_category").to_pylist()],
                       type=pa.string())
     table = table.append_column("google_type", gtypes)
