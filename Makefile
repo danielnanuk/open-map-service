@@ -66,6 +66,17 @@ etl-conflate:
 	$(PY) -c "import psycopg, os; from etl.conflate import conflate; \
 print('merged, inserted =', conflate(psycopg.connect(os.environ['DATABASE_URL'], autocommit=True)))"
 
+.PHONY: etl-index etl-all
+etl-index:
+	$(PY) -c "import psycopg, os; from etl.index import *; \
+url = os.environ['OPENSEARCH_URL']; \
+conn = psycopg.connect(os.environ['DATABASE_URL']); \
+name = create_index(url); \
+print('indexed:', bulk_index(url, name, rows_from_postgis(conn))); \
+swap_alias(url, name); print('alias ->', name)"
+
+etl-all: etl-overture etl-osm etl-load etl-conflate etl-index
+
 .PHONY: etl-osm
 etl-osm:
 	test -f data/cambodia-latest.osm.pbf || curl -L -o data/cambodia-latest.osm.pbf \
