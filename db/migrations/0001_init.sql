@@ -37,8 +37,11 @@ CREATE TABLE IF NOT EXISTS osm_pois (
   geom geometry(Point, 4326)
 );
 CREATE INDEX IF NOT EXISTS osm_pois_geom_idx ON osm_pois USING GIST (geom);
+-- geography 函数索引:conflation 的 ST_DWithin(geom::geography, ...) 依赖它,否则全表扫描
+CREATE INDEX IF NOT EXISTS places_geog_idx   ON places   USING GIST ((geom::geography));
+CREATE INDEX IF NOT EXISTS osm_pois_geog_idx ON osm_pois USING GIST ((geom::geography));
 
 CREATE TABLE IF NOT EXISTS country_boundary (
   iso text PRIMARY KEY,
-  geom geometry(MultiPolygon, 4326) NOT NULL
+  geom geometry(MultiPolygon, 4326) NOT NULL  -- 仅接受多边形:写入方需先 ST_CollectionExtract(..., 3)
 );
