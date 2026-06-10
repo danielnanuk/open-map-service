@@ -1,6 +1,7 @@
 """PostGIS → OpenSearch:时间戳索引名 + alias 原子切换,实现零停机重建。"""
 import json
 import time
+import uuid
 from pathlib import Path
 from typing import Iterable, Iterator
 
@@ -8,12 +9,13 @@ import psycopg
 import requests
 
 ALIAS = "places"
+_TIMEOUT = (5, 120)  # connect, read — 防止 OS 假死导致 ETL 永久挂起
 _MAPPINGS = json.loads((Path(__file__).parent / "mappings.json").read_text())
 
 
 def create_index(base_url: str) -> str:
-    name = f"places-{time.strftime('%Y%m%d%H%M%S')}-{int(time.time()*1000) % 1000:03d}"
-    requests.put(f"{base_url}/{name}", json=_MAPPINGS).raise_for_status()
+    name = f"places-{time.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    requests.put(f"{base_url}/{name}", json=_MAPPINGS, timeout=_TIMEOUT).raise_for_status()
     return name
 
 
@@ -32,10 +34,11 @@ def _flush(base_url: str, buf: list[str]) -> int:
     if not buf:
         return 0
     resp = requests.post(f"{base_url}/_bulk", data=("\n".join(buf) + "\n").encode("utf-8"),
-                         headers={"Content-Type": "application/x-ndjson"})
+                         headers={"Content-Type": "application/x-ndjson"}, timeout=_TIMEOUT)
     resp.raise_for_status()
-    if resp.json().get("errors"):
-        failed = [i for i in resp.json()["items"] if i["index"].get("error")]
+    body = resp.json()
+    if body.get("errors"):
+        failed = [i for i in body["items"] if i["index"].get("error")]
         raise RuntimeError(f"bulk errors: {failed[:3]}")
     n = len(buf) // 2
     buf.clear()
@@ -43,12 +46,13 @@ def _flush(base_url: str, buf: list[str]) -> int:
 
 
 def swap_alias(base_url: str, new_index: str) -> None:
-    current = requests.get(f"{base_url}/_alias/{ALIAS}")
+    requests.post(f"{base_url}/{new_index}/_refresh", timeout=_TIMEOUT).raise_for_status()
+    current = requests.get(f"{base_url}/_alias/{ALIAS}", timeout=_TIMEOUT)
     actions = [{"add": {"index": new_index, "alias": ALIAS}}]
     if current.status_code == 200:
         actions = [{"remove": {"index": old, "alias": ALIAS}} for old in current.json()
                    if old != new_index] + actions
-    requests.post(f"{base_url}/_aliases", json={"actions": actions}).raise_for_status()
+    requests.post(f"{base_url}/_aliases", json={"actions": actions}, timeout=_TIMEOUT).raise_for_status()
 
 
 def rows_from_postgis(conn: psycopg.Connection) -> Iterator[dict]:
@@ -59,12 +63,13 @@ def rows_from_postgis(conn: psycopg.Connection) -> Iterator[dict]:
         cur.execute(sql)
         for pid, names, cats, conf, addr, lon, lat in cur:
             addr = addr or {}
-            parts = [addr.get("freeform"), addr.get("locality"), addr.get("region")]
+            parts = [p for p in (addr.get("freeform"), addr.get("locality"), addr.get("region"))
+                     if p and p.strip().lower() != "cambodia"]
             yield {
                 "place_id": pid,
                 "name_default": names.get("default"),
                 "name_km": names.get("km"), "name_en": names.get("en"), "name_zh": names.get("zh"),
-                "formatted_address": ", ".join([p for p in parts if p] + ["Cambodia"]),
+                "formatted_address": ", ".join(parts + ["Cambodia"]),
                 "categories": cats, "confidence": conf,
                 "location": {"lat": lat, "lon": lon},
             }

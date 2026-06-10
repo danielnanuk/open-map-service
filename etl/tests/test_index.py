@@ -30,13 +30,28 @@ DOCS = [
      "categories": ["locality"], "confidence": 0.7, "location": {"lat": 11.55, "lon": 104.85}},
 ]
 
+
+@pytest.fixture()
+def managed_indexes():
+    prev = requests.get(f"{OS}/_alias/{ALIAS}", timeout=10)
+    prev_targets = list(prev.json().keys()) if prev.status_code == 200 else []
+    created: list[str] = []
+    yield created
+    for idx in created:
+        requests.delete(f"{OS}/{idx}", timeout=10)
+    if prev_targets:
+        requests.post(f"{OS}/_aliases", timeout=10,
+                      json={"actions": [{"add": {"index": t, "alias": ALIAS}} for t in prev_targets]})
+
+
 def _search(body):
     r = requests.post(f"{OS}/{ALIAS}/_search", json=body)
     r.raise_for_status()
     return [h["_source"]["place_id"] for h in r.json()["hits"]["hits"]]
 
-def test_index_and_query_paths():
+def test_index_and_query_paths(managed_indexes):
     name = create_index(OS)
+    managed_indexes.append(name)
     bulk_index(OS, name, iter(DOCS))
     swap_alias(OS, name)
     requests.post(f"{OS}/{name}/_refresh")
@@ -47,6 +62,27 @@ def test_index_and_query_paths():
     assert "p2" in _search({"query": {"match": {"name_en.ac": "mali"}}})              # 前缀补全
     # alias 切换原子性:再建一个空索引并切换,旧索引应被摘除
     name2 = create_index(OS)
+    managed_indexes.append(name2)
     swap_alias(OS, name2)
     aliases = requests.get(f"{OS}/_alias/{ALIAS}").json()
     assert list(aliases.keys()) == [name2]
+
+
+def test_rows_formatted_address_no_country_duplication():
+    import psycopg
+    from etl.index import rows_from_postgis
+    dsn = os.environ.get("DATABASE_URL", "postgresql://places:places@localhost:5432/places")
+    # Use autocommit connection for DDL-style INSERT/DELETE so the row is
+    # visible to the second connection; rows_from_postgis needs a regular
+    # transaction block for its server-side (DECLARE) cursor.
+    with psycopg.connect(dsn, autocommit=True) as ac_conn:
+        ac_conn.execute("""INSERT INTO places (place_id, primary_source, names, categories, sources, address, geom)
+            VALUES ('idx-test-addr', 'overture', '{"default":"X"}', '{cafe}', '[]',
+                    '{"freeform":"Cambodia"}', ST_SetSRID(ST_MakePoint(104.9, 11.5), 4326))
+            ON CONFLICT (place_id) DO NOTHING""")
+        try:
+            with psycopg.connect(dsn) as read_conn:
+                row = next(r for r in rows_from_postgis(read_conn) if r["place_id"] == "idx-test-addr")
+            assert row["formatted_address"] == "Cambodia"   # 不是 "Cambodia, Cambodia"
+        finally:
+            ac_conn.execute("DELETE FROM places WHERE place_id = 'idx-test-addr'")
