@@ -44,18 +44,21 @@ probe-overture:
 	$(PY) -c "import duckdb; print(duckdb.sql(\"DESCRIBE SELECT * FROM read_parquet('data/overture_places_raw.parquet')\"))"
 
 .PHONY: etl-load
+# 注意:etl-load 不是自洽的——它会用 Overture 字段覆盖 places,务必随后跑 etl-conflate(或直接用 etl-all)
 etl-load:
 	$(PY) -c "import psycopg, os, pyarrow.parquet as pq, pyarrow as pa; \
 from etl.load import *; \
 conn = psycopg.connect(os.environ['DATABASE_URL'], autocommit=True); \
 load_boundary_wkt(conn, 'KH', extract_kh_boundary_wkt('data/overture_divisions_raw.parquet')); \
+assert not conn.execute(\"SELECT ST_IsEmpty(geom) FROM country_boundary WHERE iso='KH'\").fetchone()[0], 'KH boundary empty — divisions extract degenerate'; \
 t = pq.read_table('data/overture_places.parquet'); \
 t = t.rename_columns([{'sources_json':'sources'}.get(c, c) for c in t.column_names]); \
 pq.write_table(t, 'data/overture_places_staged.parquet'); \
 print('staged:', copy_parquet_to_staging(conn, 'data/overture_places_staged.parquet', 'staging_overture', \
   ['place_id','name_default','name_km','name_en','name_zh','raw_category','google_type','phone','website', \
    'addr_freeform','addr_locality','addr_region','addr_country','confidence','sources','lon','lat'])); \
-print('places upserted:', upsert_places_from_staging(conn)); \
+n = upsert_places_from_staging(conn); print('places upserted:', n); \
+assert n > 0, 'zero places upserted — boundary or staging broken'; \
 print('osm pois loaded:', load_osm_pois(conn, 'data/osm_pois.parquet'))"
 
 .PHONY: etl-osm
