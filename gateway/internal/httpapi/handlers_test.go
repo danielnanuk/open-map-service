@@ -227,3 +227,13 @@ func TestGetPlaceNotFound(t *testing.T) {
 		t.Fatalf("want google-style 404, got %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestFormatAddressDedupesCambodia(t *testing.T) {
+	got := formatAddress(map[string]string{"freeform": "cambodia", "locality": "ភ្នំពេញ"})
+	if got != "ភ្នំពេញ, Cambodia" {
+		t.Fatalf("dedupe failed: %q", got)
+	}
+	if got := formatAddress(map[string]string{}); got != "Cambodia" {
+		t.Fatalf("empty address: %q", got)
+	}
+}

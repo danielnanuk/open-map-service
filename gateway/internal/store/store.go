@@ -4,6 +4,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,19 +21,23 @@ type PlaceRow struct {
 	Lon, Lat     float64
 }
 
-type PG struct{ Pool *pgxpool.Pool }
+type PG struct{ pool *pgxpool.Pool }
 
 func NewPG(ctx context.Context, dsn string) (*PG, error) {
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		return nil, err
 	}
-	return &PG{Pool: pool}, nil
+	if err = pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("pg ping: %w", err)
+	}
+	return &PG{pool: pool}, nil
 }
 
 // GetPlace 返回 (nil, nil) 表示不存在。
 func (p *PG) GetPlace(ctx context.Context, id string) (*PlaceRow, error) {
-	row := p.Pool.QueryRow(ctx, `
+	row := p.pool.QueryRow(ctx, `
 		SELECT place_id, names, categories,
 		       COALESCE(phone,''), COALESCE(website,''), COALESCE(opening_hours,''),
 		       COALESCE(address, '{}'::jsonb), ST_X(geom), ST_Y(geom)
