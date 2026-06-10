@@ -3,6 +3,7 @@ package fieldmask
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -48,5 +49,28 @@ func TestUnknownPathsAndWhitespace(t *testing.T) {
 	want := map[string]any{"places": []any{map[string]any{"id": "a"}}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
+func TestEmptySegmentsAndTrailingDot(t *testing.T) {
+	doc := `{"places":[{"id":"a"}],"loc":{"latitude":1}}`
+	got := apply(t, doc, "loc.,places.id")
+	want := map[string]any{
+		"loc":    map[string]any{"latitude": float64(1)},
+		"places": []any{map[string]any{"id": "a"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	if got := apply(t, doc, ",,,"); len(got) != 0 {
+		t.Fatalf("commas-only mask should select nothing, got %v", got)
+	}
+}
+
+func TestOversizedMaskTruncated(t *testing.T) {
+	doc := `{"id":"a"}`
+	huge := "id," + strings.Repeat("x.", 10000)
+	if got := apply(t, doc, huge); got["id"] != "a" {
+		t.Fatalf("oversized mask should still apply leading valid path, got %v", got)
 	}
 }

@@ -6,8 +6,14 @@ import "strings"
 
 type node map[string]node
 
+// maxMaskLen 截断客户端可控的 header,封住超深路径的 CPU 放大面(M5 配额之前的兜底)。
+const maxMaskLen = 2048
+
 func Apply(doc map[string]any, mask string) map[string]any {
 	mask = strings.TrimSpace(mask)
+	if len(mask) > maxMaskLen {
+		mask = mask[:maxMaskLen]
+	}
 	if mask == "" || mask == "*" {
 		return doc
 	}
@@ -15,6 +21,9 @@ func Apply(doc map[string]any, mask string) map[string]any {
 	for _, path := range strings.Split(mask, ",") {
 		cur := root
 		for _, part := range strings.Split(strings.TrimSpace(path), ".") {
+			if part == "" {
+				continue // 前导/尾随点或连续逗号产生的空段
+			}
 			if cur[part] == nil {
 				cur[part] = node{}
 			}

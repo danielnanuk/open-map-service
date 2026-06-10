@@ -43,7 +43,7 @@ type SearchTextRequest struct {
 }
 
 type SearchNearbyRequest struct {
-	LocationRestriction Bias     `json:"locationRestriction"`
+	LocationRestriction Bias     `json:"locationRestriction"` // required;有意非指针,勿改成 *Bias
 	IncludedTypes       []string `json:"includedTypes,omitempty"`
 	MaxResultCount      int      `json:"maxResultCount,omitempty"`
 	RankPreference      string   `json:"rankPreference,omitempty"` // POPULARITY | DISTANCE
