@@ -20,3 +20,14 @@ down:
 .PHONY: migrate
 migrate:
 	bash db/migrate.sh
+
+.PHONY: py-setup test-py test-py-integration
+py-setup:
+	python3 -m venv etl/.venv
+	$(PIP) install -e 'etl[dev]'
+
+test-py:
+	cd etl && .venv/bin/pytest -m "not integration" -q
+
+test-py-integration:
+	cd etl && .venv/bin/pytest -m integration -q
