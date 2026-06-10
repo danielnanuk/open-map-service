@@ -21,6 +21,12 @@ type PlaceStore interface {
 	GetPlace(ctx context.Context, id string) (*store.PlaceRow, error)
 }
 
+// dataAttributions 满足 ODbL/CDLA 的署名义务(spec §11),静态附于每个 Place。
+var dataAttributions = []gapi.Attribution{
+	{Provider: "OpenStreetMap contributors", ProviderURI: "https://www.openstreetmap.org/copyright"},
+	{Provider: "Overture Maps Foundation", ProviderURI: "https://overturemaps.org"},
+}
+
 type Handlers struct {
 	searcher Searcher
 	store    PlaceStore
@@ -65,6 +71,7 @@ func docToPlace(d search.Doc, lang string) gapi.Place {
 		FormattedAddress: d.FormattedAddress,
 		Location:         &gapi.LatLng{Latitude: d.Location.Lat, Longitude: d.Location.Lon},
 		Types:            d.Categories,
+		Attributions:     dataAttributions,
 	}
 }
 
@@ -186,6 +193,7 @@ func (h *Handlers) GetPlace(w http.ResponseWriter, r *http.Request) {
 		Types:                    row.Categories,
 		InternationalPhoneNumber: row.Phone,
 		WebsiteURI:               row.Website,
+		Attributions:             dataAttributions,
 	}
 	if row.OpeningHours != "" {
 		// 简化:OSM opening_hours 原文作为单条 weekdayDescriptions,不解析为 periods(见 spec §4)

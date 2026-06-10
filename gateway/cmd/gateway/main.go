@@ -40,5 +40,6 @@ func main() {
 	})
 
 	log.Printf("gateway listening on :%s", port)
+	// TODO(M5): 换成 http.Server{ReadHeaderTimeout,...} + SIGTERM 优雅退出(生产加固里程碑)
 	log.Fatal(http.ListenAndServe(":"+port, mux))
 }

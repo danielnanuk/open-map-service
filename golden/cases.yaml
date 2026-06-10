@@ -6,7 +6,7 @@
   endpoint: searchText
   body: {textQuery: "Angkor Wat"}
   expect_any: ["Angkor", "អង្គរ"]
-- name: angkor_wat_romanized_khmer
+- name: angkor_wat_latin_fuzzy
   endpoint: searchText
   body: {textQuery: "angkor vat"}
   expect_any: ["Angkor", "អង្គរ"]

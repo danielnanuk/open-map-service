@@ -23,6 +23,11 @@ type OpeningHours struct {
 	WeekdayDescriptions []string `json:"weekdayDescriptions,omitempty"`
 }
 
+type Attribution struct {
+	Provider    string `json:"provider"`
+	ProviderURI string `json:"providerUri,omitempty"`
+}
+
 type Place struct {
 	Name                     string         `json:"name,omitempty"` // "places/<id>"
 	ID                       string         `json:"id,omitempty"`
@@ -33,6 +38,7 @@ type Place struct {
 	InternationalPhoneNumber string         `json:"internationalPhoneNumber,omitempty"`
 	WebsiteURI               string         `json:"websiteUri,omitempty"`
 	RegularOpeningHours      *OpeningHours  `json:"regularOpeningHours,omitempty"`
+	Attributions             []Attribution  `json:"attributions,omitempty"`
 }
 
 type SearchTextRequest struct {

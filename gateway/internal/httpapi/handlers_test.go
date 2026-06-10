@@ -54,6 +54,9 @@ func TestSearchTextResponseShapeAndLanguage(t *testing.T) {
 	if loc["latitude"].(float64) != 13.4125 {
 		t.Fatalf("location: %v", loc)
 	}
+	if place["attributions"].([]any)[0].(map[string]any)["provider"] != "OpenStreetMap contributors" {
+		t.Fatalf("attributions missing: %v", place)
+	}
 }
 
 func TestSearchTextEmptyQueryIsInvalidArgument(t *testing.T) {
@@ -214,6 +217,9 @@ func TestGetPlaceDetails(t *testing.T) {
 	oh := place["regularOpeningHours"].(map[string]any)["weekdayDescriptions"].([]any)
 	if oh[0] != "Mo-Su 07:00-22:00" {
 		t.Fatalf("hours: %v", oh)
+	}
+	if place["attributions"].([]any)[0].(map[string]any)["provider"] != "OpenStreetMap contributors" {
+		t.Fatalf("attributions missing: %v", place)
 	}
 }
 

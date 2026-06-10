@@ -49,5 +49,6 @@ curl -s -X POST localhost:8080/v1/places:searchText \
 - 缺 `X-Goog-FieldMask` 时返回全量字段(Google 会报错)
 - `regularOpeningHours.weekdayDescriptions` 为 OSM `opening_hours` 原文,未解析成 periods
 - autocomplete 的 `text` 无 `matches` 高亮偏移
-- 纯高棉文名称的罗马音检索暂不可用(ICU 无 Khmer→Latin 转写;M2 计划引入别名表/ETL 期转写)
+- 罗马音检索仅覆盖主名本身为拉丁字的地点(柬埔寨商户多数如此);纯高棉文名的
+  Khmer→Latin 转写 ICU 不支持,M2 计划引入别名表/ETL 期转写
 - 鉴权/配额在 M5 落地,当前无鉴权
