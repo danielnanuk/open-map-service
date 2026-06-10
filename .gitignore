@@ -1,4 +1,4 @@
-data/
+data/*
 !data/.gitkeep
 *.parquet
 __pycache__/
@@ -7,3 +7,5 @@ __pycache__/
 .pytest_cache/
 gateway/gateway
 *.osm.pbf
+.env
+.env.local

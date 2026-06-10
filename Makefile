@@ -7,4 +7,4 @@ PYTEST := etl/.venv/bin/pytest
 
 .PHONY: help
 help:
-	@grep -E '^[a-z][a-zA-Z_-]*:' Makefile | cut -d: -f1 | sort
+	@grep -E '^[a-z][a-zA-Z0-9_-]*:' $(firstword $(MAKEFILE_LIST)) | cut -d: -f1 | sort
