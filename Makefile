@@ -16,3 +16,7 @@ up:
 
 down:
 	docker compose down
+
+.PHONY: migrate
+migrate:
+	bash db/migrate.sh
