@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS staging_overture (
 );
 
 CREATE TABLE IF NOT EXISTS osm_pois (
-  osm_id text PRIMARY KEY,                    -- osm:node:123 / osm:area:456
+  osm_id text PRIMARY KEY,                    -- osm:node:123 / osm:way:456 / osm:rel:789
   name_default text, name_km text, name_en text, name_zh text,
   google_type text,
   phone text, website text, opening_hours text,

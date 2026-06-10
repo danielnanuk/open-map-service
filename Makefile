@@ -42,3 +42,9 @@ print(f'transformed {n} places')"
 
 probe-overture:
 	$(PY) -c "import duckdb; print(duckdb.sql(\"DESCRIBE SELECT * FROM read_parquet('data/overture_places_raw.parquet')\"))"
+
+.PHONY: etl-osm
+etl-osm:
+	test -f data/cambodia-latest.osm.pbf || curl -L -o data/cambodia-latest.osm.pbf \
+		https://download.geofabrik.de/asia/cambodia-latest.osm.pbf
+	$(PY) -c "from etl.osm import extract; print('osm pois:', extract('data/cambodia-latest.osm.pbf','data/osm_pois.parquet'))"
