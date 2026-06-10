@@ -29,6 +29,16 @@ services:
       retries: 30
       start_period: 60s
 
+  gateway:
+    build: gateway
+    environment:
+      DATABASE_URL: postgresql://places:places@postgis:5432/places
+      OPENSEARCH_URL: http://opensearch:9200
+    ports: ["8080:8080"]
+    depends_on:
+      postgis: {condition: service_healthy}
+      opensearch: {condition: service_healthy}
+
 volumes:
   pgdata:
   osdata:

@@ -1,0 +1,35 @@
+- name: angkor_wat_khmer
+  endpoint: searchText
+  body: {textQuery: "អង្គរវត្ត"}
+  expect_any: ["Angkor", "អង្គរ"]
+- name: angkor_wat_english
+  endpoint: searchText
+  body: {textQuery: "Angkor Wat"}
+  expect_any: ["Angkor", "អង្គរ"]
+- name: angkor_wat_romanized_khmer
+  endpoint: searchText
+  body: {textQuery: "angkor vat"}
+  expect_any: ["Angkor", "អង្គរ"]
+- name: royal_palace_en
+  endpoint: searchText
+  body: {textQuery: "Royal Palace Phnom Penh"}
+  expect_any: ["Royal Palace", "ព្រះបរមរាជវាំង"]
+- name: central_market_khmer
+  endpoint: searchText
+  body: {textQuery: "ផ្សារធំថ្មី"}
+  expect_any: ["Central Market", "ផ្សារធំថ្មី", "Phsar Thmei"]
+- name: zh_angkor
+  endpoint: searchText
+  body: {textQuery: "吴哥窟"}
+  expect_any: ["Angkor", "吴哥", "អង្គរ"]
+  soft: true
+- name: autocomplete_prefix_en
+  endpoint: autocomplete
+  body: {input: "angk"}
+  expect_any: ["Angkor", "អង្គរ"]
+- name: nearby_restaurants_pp
+  endpoint: searchNearby
+  body:
+    locationRestriction: {circle: {center: {latitude: 11.5621, longitude: 104.9160}, radius: 2000}}
+    includedTypes: ["restaurant"]
+  expect_min_results: 3

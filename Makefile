@@ -77,6 +77,16 @@ swap_alias(url, name); print('alias ->', name)"
 
 etl-all: etl-overture etl-osm etl-load etl-conflate etl-index
 
+.PHONY: test-go up-all golden
+test-go:
+	cd gateway && go test ./...
+
+up-all:
+	docker compose up -d --build
+
+golden:
+	$(PY) golden/run_golden.py
+
 .PHONY: etl-osm
 etl-osm:
 	test -f data/cambodia-latest.osm.pbf || curl -L -o data/cambodia-latest.osm.pbf \
