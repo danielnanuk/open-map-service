@@ -8,7 +8,7 @@ dependencies = [
   "psycopg[binary]>=3.2",
   "osmium>=4.0",
   "shapely>=2.0",
-  "overturemaps",
+  "overturemaps>=1.0",
   "requests>=2.32",
   "pyyaml>=6",
 ]
