@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/danielnanuk/open-map-service/gateway/internal/fieldmask"
@@ -14,8 +15,9 @@ func writeJSON(w http.ResponseWriter, r *http.Request, status int, payload any) 
 	if mask != "" && status == http.StatusOK {
 		raw, _ := json.Marshal(payload)
 		var m map[string]any
-		json.Unmarshal(raw, &m)
-		payload = fieldmask.Apply(m, mask)
+		if err := json.Unmarshal(raw, &m); err == nil {
+			payload = fieldmask.Apply(m, mask)
+		}
 	}
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(payload)
@@ -32,5 +34,6 @@ func invalidArgument(w http.ResponseWriter, msg string) {
 }
 
 func internal(w http.ResponseWriter, err error) {
-	writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+	log.Printf("internal error: %v", err)
+	writeError(w, http.StatusInternalServerError, "INTERNAL", "Internal error encountered.")
 }

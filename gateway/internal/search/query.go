@@ -20,23 +20,23 @@ func gaussFn(g Geo) map[string]any {
 		"origin": map[string]any{"lat": g.Lat, "lon": g.Lon}, "scale": "5km", "decay": 0.5}}}
 }
 
-func functionScore(query map[string]any, bias *Geo) map[string]any {
+func functionScore(query map[string]any, bias *Geo, boostMode string) map[string]any {
 	fns := []map[string]any{confidenceFn()}
 	if bias != nil {
 		fns = append(fns, gaussFn(*bias))
 	}
 	return map[string]any{"function_score": map[string]any{
-		"query": query, "functions": fns, "score_mode": "multiply", "boost_mode": "multiply"}}
+		"query": query, "functions": fns, "score_mode": "multiply", "boost_mode": boostMode}}
 }
 
 func searchTextBody(q string, bias *Geo, size int) map[string]any {
 	mm := map[string]any{"multi_match": map[string]any{"query": q, "type": "best_fields", "fields": textFields}}
-	return map[string]any{"size": size, "query": functionScore(mm, bias)}
+	return map[string]any{"size": size, "query": functionScore(mm, bias, "multiply")}
 }
 
 func autocompleteBody(input string, bias *Geo, size int) map[string]any {
 	mm := map[string]any{"multi_match": map[string]any{"query": input, "type": "best_fields", "fields": acFields}}
-	return map[string]any{"size": size, "query": functionScore(mm, bias)}
+	return map[string]any{"size": size, "query": functionScore(mm, bias, "multiply")}
 }
 
 func nearbyBody(center Geo, radiusMeters float64, types []string, size int, rankByDistance bool) map[string]any {
@@ -54,7 +54,9 @@ func nearbyBody(center Geo, radiusMeters float64, types []string, size int, rank
 			"location": map[string]any{"lat": center.Lat, "lon": center.Lon},
 			"order":    "asc", "unit": "m"}}}
 	} else {
-		body["query"] = functionScore(boolq, &center)
+		// filter-only bool 的 query score 恒为 0,multiply 会把所有结果打成 0 分;
+		// replace 让函数得分(confidence × 距离衰减)直接成为排序依据
+		body["query"] = functionScore(boolq, &center, "replace")
 	}
 	return body
 }

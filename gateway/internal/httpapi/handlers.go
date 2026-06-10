@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/danielnanuk/open-map-service/gateway/internal/gapi"
 	"github.com/danielnanuk/open-map-service/gateway/internal/search"
@@ -38,7 +39,8 @@ func geoFromBias(b *gapi.Bias) *search.Geo {
 
 // chooseName 按 languageCode 选展示名,缺失回退 default。
 func chooseName(d search.Doc, lang string) string {
-	switch lang {
+	primary, _, _ := strings.Cut(lang, "-") // BCP-47: zh-CN → zh
+	switch strings.ToLower(primary) {
 	case "km":
 		if d.NameKm != "" {
 			return d.NameKm

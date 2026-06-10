@@ -15,6 +15,9 @@ func TestSearchTextBodyWithBias(t *testing.T) {
 	if body["size"] != 10 {
 		t.Fatalf("size: %v", body["size"])
 	}
+	if fs["boost_mode"] != "multiply" {
+		t.Fatalf("searchText boost_mode should be multiply, got %v", fs["boost_mode"])
+	}
 }
 
 func TestSearchTextBodyNoBias(t *testing.T) {
@@ -41,7 +44,11 @@ func TestNearbyBodyPopularityRank(t *testing.T) {
 	if _, ok := body["sort"]; ok {
 		t.Fatal("POPULARITY rank must not set explicit sort")
 	}
-	if _, ok := body["query"].(map[string]any)["function_score"]; !ok {
+	fs, ok := body["query"].(map[string]any)["function_score"].(map[string]any)
+	if !ok {
 		t.Fatal("POPULARITY rank should wrap in function_score")
+	}
+	if fs["boost_mode"] != "replace" {
+		t.Fatalf("nearby POPULARITY boost_mode should be replace, got %v", fs["boost_mode"])
 	}
 }

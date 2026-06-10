@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -85,5 +86,42 @@ func TestFieldMaskApplied(t *testing.T) {
 	place := resp["places"].([]any)[0].(map[string]any)
 	if len(place) != 1 || place["id"] != "p1" {
 		t.Fatalf("fieldmask not applied: %v", place)
+	}
+}
+
+type errSearcher struct{}
+
+func (e *errSearcher) SearchText(context.Context, string, *search.Geo, int) ([]search.Doc, error) {
+	return nil, fmt.Errorf("Post \"http://opensearch:9200/...\": dial tcp")
+}
+func (e *errSearcher) SearchNearby(context.Context, search.Geo, float64, []string, int, bool) ([]search.Doc, error) {
+	return nil, fmt.Errorf("Post \"http://opensearch:9200/...\": dial tcp")
+}
+func (e *errSearcher) Autocomplete(context.Context, string, *search.Geo, int) ([]search.Doc, error) {
+	return nil, fmt.Errorf("Post \"http://opensearch:9200/...\": dial tcp")
+}
+
+func TestChooseNameBCP47(t *testing.T) {
+	h := New(&fakeSearcher{docs: []search.Doc{doc()}}, nil)
+	req := httptest.NewRequest("POST", "/v1/places:searchText",
+		strings.NewReader(`{"textQuery":"angkor","languageCode":"zh-CN"}`))
+	rec := httptest.NewRecorder()
+	h.SearchText(rec, req)
+	var resp map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	place := resp["places"].([]any)[0].(map[string]any)
+	if place["displayName"].(map[string]any)["text"] != "吴哥窟" {
+		t.Fatalf("zh-CN should resolve zh name: %v", place)
+	}
+}
+
+func TestInternalErrorIsGeneric(t *testing.T) {
+	h := New(&errSearcher{}, nil)
+	req := httptest.NewRequest("POST", "/v1/places:searchText", strings.NewReader(`{"textQuery":"x"}`))
+	rec := httptest.NewRecorder()
+	h.SearchText(rec, req)
+	if rec.Code != 500 || strings.Contains(rec.Body.String(), "9200") ||
+		!strings.Contains(rec.Body.String(), "Internal error encountered.") {
+		t.Fatalf("internal error must be generic: %d %s", rec.Code, rec.Body.String())
 	}
 }
