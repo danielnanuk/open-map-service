@@ -94,6 +94,34 @@ func (h *Handlers) SearchText(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, http.StatusOK, docsToPlacesResponse(docs, req.LanguageCode))
 }
 
+func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
+	var req gapi.AutocompleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Input == "" {
+		invalidArgument(w, "input is required")
+		return
+	}
+	docs, err := h.searcher.Autocomplete(r.Context(), req.Input, geoFromBias(req.LocationBias), 5)
+	if err != nil {
+		internal(w, err)
+		return
+	}
+	resp := gapi.AutocompleteResponse{Suggestions: []gapi.Suggestion{}}
+	for _, d := range docs {
+		name := chooseName(d, req.LanguageCode)
+		resp.Suggestions = append(resp.Suggestions, gapi.Suggestion{PlacePrediction: &gapi.PlacePrediction{
+			Place:   "places/" + d.PlaceID,
+			PlaceID: d.PlaceID,
+			Text:    &gapi.LocalizedText{Text: name},
+			StructuredFormat: &gapi.StructuredFormat{
+				MainText:      &gapi.LocalizedText{Text: name},
+				SecondaryText: &gapi.LocalizedText{Text: d.FormattedAddress},
+			},
+			Types: d.Categories,
+		}})
+	}
+	writeJSON(w, r, http.StatusOK, resp)
+}
+
 func (h *Handlers) SearchNearby(w http.ResponseWriter, r *http.Request) {
 	var req gapi.SearchNearbyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.LocationRestriction.Circle == nil {

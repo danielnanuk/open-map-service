@@ -125,3 +125,37 @@ func TestInternalErrorIsGeneric(t *testing.T) {
 		t.Fatalf("internal error must be generic: %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestAutocompleteShape(t *testing.T) {
+	h := New(&fakeSearcher{docs: []search.Doc{doc()}}, nil)
+	req := httptest.NewRequest("POST", "/v1/places:autocomplete",
+		strings.NewReader(`{"input":"ang","languageCode":"en"}`))
+	rec := httptest.NewRecorder()
+	h.Autocomplete(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status %d", rec.Code)
+	}
+	var resp map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	pred := resp["suggestions"].([]any)[0].(map[string]any)["placePrediction"].(map[string]any)
+	if pred["placeId"] != "p1" || pred["place"] != "places/p1" {
+		t.Fatalf("prediction identity: %v", pred)
+	}
+	sf := pred["structuredFormat"].(map[string]any)
+	if sf["mainText"].(map[string]any)["text"] != "Angkor Wat" {
+		t.Fatalf("mainText: %v", sf)
+	}
+	if sf["secondaryText"].(map[string]any)["text"] != "Siem Reap, Cambodia" {
+		t.Fatalf("secondaryText: %v", sf)
+	}
+}
+
+func TestAutocompleteEmptyInput(t *testing.T) {
+	h := New(&fakeSearcher{}, nil)
+	req := httptest.NewRequest("POST", "/v1/places:autocomplete", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	h.Autocomplete(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("want 400, got %d", rec.Code)
+	}
+}
