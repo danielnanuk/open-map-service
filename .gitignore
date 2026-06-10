@@ -1,0 +1,9 @@
+data/
+!data/.gitkeep
+*.parquet
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+gateway/gateway
+*.osm.pbf
