@@ -8,3 +8,11 @@ PYTEST := etl/.venv/bin/pytest
 .PHONY: help
 help:
 	@grep -E '^[a-z][a-zA-Z0-9_-]*:' $(firstword $(MAKEFILE_LIST)) | cut -d: -f1 | sort
+
+.PHONY: up down
+up:
+	docker compose up -d --build postgis opensearch
+	docker compose ps
+
+down:
+	docker compose down
