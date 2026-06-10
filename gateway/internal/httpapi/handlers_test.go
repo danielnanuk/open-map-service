@@ -1,0 +1,89 @@
+package httpapi
+
+import (
+	"context"
+	"encoding/json"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/danielnanuk/open-map-service/gateway/internal/search"
+)
+
+type fakeSearcher struct{ docs []search.Doc }
+
+func (f *fakeSearcher) SearchText(context.Context, string, *search.Geo, int) ([]search.Doc, error) {
+	return f.docs, nil
+}
+func (f *fakeSearcher) SearchNearby(context.Context, search.Geo, float64, []string, int, bool) ([]search.Doc, error) {
+	return f.docs, nil
+}
+func (f *fakeSearcher) Autocomplete(context.Context, string, *search.Geo, int) ([]search.Doc, error) {
+	return f.docs, nil
+}
+
+func doc() search.Doc {
+	d := search.Doc{PlaceID: "p1", NameDefault: "អង្គរវត្ត", NameEn: "Angkor Wat",
+		NameZh: "吴哥窟", FormattedAddress: "Siem Reap, Cambodia",
+		Categories: []string{"tourist_attraction"}, Confidence: 0.95}
+	d.Location.Lat, d.Location.Lon = 13.4125, 103.867
+	return d
+}
+
+func TestSearchTextResponseShapeAndLanguage(t *testing.T) {
+	h := New(&fakeSearcher{docs: []search.Doc{doc()}}, nil)
+	req := httptest.NewRequest("POST", "/v1/places:searchText",
+		strings.NewReader(`{"textQuery":"angkor","languageCode":"zh"}`))
+	rec := httptest.NewRecorder()
+	h.SearchText(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	place := resp["places"].([]any)[0].(map[string]any)
+	if place["id"] != "p1" || place["name"] != "places/p1" {
+		t.Fatalf("place identity wrong: %v", place)
+	}
+	if place["displayName"].(map[string]any)["text"] != "吴哥窟" { // languageCode=zh 选中文名
+		t.Fatalf("displayName should honor languageCode: %v", place)
+	}
+	loc := place["location"].(map[string]any)
+	if loc["latitude"].(float64) != 13.4125 {
+		t.Fatalf("location: %v", loc)
+	}
+}
+
+func TestSearchTextEmptyQueryIsInvalidArgument(t *testing.T) {
+	h := New(&fakeSearcher{}, nil)
+	req := httptest.NewRequest("POST", "/v1/places:searchText", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	h.SearchText(rec, req)
+	if rec.Code != 400 || !strings.Contains(rec.Body.String(), "INVALID_ARGUMENT") {
+		t.Fatalf("want google-style 400, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSearchNearbyRequiresRestriction(t *testing.T) {
+	h := New(&fakeSearcher{}, nil)
+	req := httptest.NewRequest("POST", "/v1/places:searchNearby", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	h.SearchNearby(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("want 400, got %d", rec.Code)
+	}
+}
+
+func TestFieldMaskApplied(t *testing.T) {
+	h := New(&fakeSearcher{docs: []search.Doc{doc()}}, nil)
+	req := httptest.NewRequest("POST", "/v1/places:searchText", strings.NewReader(`{"textQuery":"x"}`))
+	req.Header.Set("X-Goog-FieldMask", "places.id")
+	rec := httptest.NewRecorder()
+	h.SearchText(rec, req)
+	var resp map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	place := resp["places"].([]any)[0].(map[string]any)
+	if len(place) != 1 || place["id"] != "p1" {
+		t.Fatalf("fieldmask not applied: %v", place)
+	}
+}
