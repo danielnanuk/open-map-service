@@ -61,6 +61,11 @@ n = upsert_places_from_staging(conn); print('places upserted:', n); \
 assert n > 0, 'zero places upserted — boundary or staging broken'; \
 print('osm pois loaded:', load_osm_pois(conn, 'data/osm_pois.parquet'))"
 
+.PHONY: etl-conflate
+etl-conflate:
+	$(PY) -c "import psycopg, os; from etl.conflate import conflate; \
+print('merged, inserted =', conflate(psycopg.connect(os.environ['DATABASE_URL'], autocommit=True)))"
+
 .PHONY: etl-osm
 etl-osm:
 	test -f data/cambodia-latest.osm.pbf || curl -L -o data/cambodia-latest.osm.pbf \
