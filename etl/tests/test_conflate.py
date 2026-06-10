@@ -39,3 +39,22 @@ def test_conflate_merge_insert_idempotent(conn):
     assert conn.execute("SELECT count(*) FROM places").fetchone()[0] == 2  # 幂等:不重复插入
     sources = conn.execute("SELECT sources FROM places WHERE place_id='gers-malis'").fetchone()[0]
     assert sum(1 for s in sources if s["dataset"] == "osm") == 1          # 幂等:不重复追加来源
+
+
+def test_conflate_rerun_stable_with_two_osm_matches(conn):
+    # B(更近)经 default 分支匹配并把自己的 en 填入;C(稍远)default 是高棉文,只能靠 en 分支。
+    # 旧代码重跑时 C 的 en 会去比对 B 填入的 en 而掉出匹配集,被重复插入。
+    conn.execute("""INSERT INTO places (place_id, primary_source, names, categories, sources, geom)
+        VALUES ('gers-plaza', 'overture', '{"default":"Sunrise Plaza Hotel"}', '{lodging}',
+                '[]', ST_SetSRID(ST_MakePoint(104.92000, 11.57000), 4326))""")
+    conn.execute("""INSERT INTO osm_pois (osm_id, name_default, name_en, google_type, geom)
+        VALUES ('osm:node:8', 'Sunrise Plaza', 'SP Grand', 'lodging',
+                ST_SetSRID(ST_MakePoint(104.92001, 11.57001), 4326))""")
+    conn.execute("""INSERT INTO osm_pois (osm_id, name_default, name_en, google_type, geom)
+        VALUES ('osm:node:9', 'សាន់រ៉ាយ', 'Sunrise Plaza Hotel', 'lodging',
+                ST_SetSRID(ST_MakePoint(104.92003, 11.57003), 4326))""")
+    conflate(conn)
+    n1 = conn.execute("SELECT count(*) FROM places").fetchone()[0]
+    conflate(conn)
+    n2 = conn.execute("SELECT count(*) FROM places").fetchone()[0]
+    assert n1 == n2, f"rerun changed places count {n1} -> {n2}"

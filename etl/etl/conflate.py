@@ -10,9 +10,10 @@ FROM osm_pois o
 JOIN places p ON p.primary_source = 'overture'
             AND ST_DWithin(o.geom::geography, p.geom::geography, 50)
 WHERE (
+        -- 匹配只锚定 Overture 原生字段(default 不会被 merge 改写):任何分支在重跑时只增不减,保证幂等
         word_similarity(lower(o.name_default), lower(p.names->>'default')) > 0.45
      OR word_similarity(lower(COALESCE(o.name_en, o.name_default)),
-                        lower(COALESCE(p.names->>'en', p.names->>'default'))) > 0.45
+                        lower(p.names->>'default')) > 0.45
      OR (o.name_km IS NOT NULL AND o.name_km = p.names->>'km')
       )
   AND (o.google_type = 'point_of_interest' OR p.categories[1] = 'point_of_interest'

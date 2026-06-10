@@ -9,3 +9,5 @@ gateway/gateway
 *.osm.pbf
 .env
 .env.local
+etl/build/
+*.egg-info/
