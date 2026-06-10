@@ -31,3 +31,14 @@ test-py:
 
 test-py-integration:
 	cd etl && .venv/bin/pytest -m integration -q
+
+.PHONY: etl-overture probe-overture
+etl-overture:
+	mkdir -p data
+	$(PY) -c "from etl.overture import download, transform; \
+download('data/overture_places_raw.parquet','data/overture_divisions_raw.parquet'); \
+n = transform('data/overture_places_raw.parquet','data/overture_places.parquet'); \
+print(f'transformed {n} places')"
+
+probe-overture:
+	$(PY) -c "import duckdb; print(duckdb.sql(\"DESCRIBE SELECT * FROM read_parquet('data/overture_places_raw.parquet')\"))"
