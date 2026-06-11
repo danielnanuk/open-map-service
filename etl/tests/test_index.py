@@ -71,7 +71,7 @@ def test_index_and_query_paths(managed_indexes):
 def test_rows_formatted_address_no_country_duplication():
     import psycopg
     from etl.index import rows_from_postgis
-    dsn = os.environ.get("DATABASE_URL", "postgresql://places:places@localhost:5432/places")
+    dsn = os.environ.get("DATABASE_URL", "postgresql://places:places@localhost:5432/places_test")
     # Use autocommit connection for DDL-style INSERT/DELETE so the row is
     # visible to the second connection; rows_from_postgis needs a regular
     # transaction block for its server-side (DECLARE) cursor.

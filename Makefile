@@ -44,6 +44,12 @@ down:
 migrate:
 	bash db/migrate.sh
 
+.PHONY: migrate-test
+migrate-test:
+	docker exec places-postgis-1 psql -U places -d places -tA -c "SELECT 1 FROM pg_database WHERE datname='places_test'" | grep -q 1 || \
+	  docker exec places-postgis-1 psql -U places -d places -c "CREATE DATABASE places_test"
+	TARGET_DB=places_test bash db/migrate.sh
+
 .PHONY: py-setup test-py test-py-integration
 py-setup:
 	python3 -m venv etl/.venv
@@ -53,7 +59,7 @@ test-py:
 	cd etl && .venv/bin/pytest -m "not integration" -q
 
 test-py-integration:
-	cd etl && .venv/bin/pytest -m integration -q
+	cd etl && DATABASE_URL=postgresql://places:places@localhost:5432/places_test OPENSEARCH_ALIAS=places_test .venv/bin/pytest -m integration -q
 
 .PHONY: etl-overture probe-overture
 etl-overture:

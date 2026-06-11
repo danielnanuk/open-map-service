@@ -9,7 +9,7 @@ import pytest
 from etl.load import copy_parquet_to_staging, load_boundary_wkt, upsert_places_from_staging
 
 pytestmark = pytest.mark.integration
-DSN = os.environ.get("DATABASE_URL", "postgresql://places:places@localhost:5432/places")
+DSN = os.environ.get("DATABASE_URL", "postgresql://places:places@localhost:5432/places_test")
 # 把"国界"造成金边附近的盒子,gers-in 在内、gers-out 在外
 BOX = "MULTIPOLYGON(((104 11,106 11,106 12,104 12,104 11)))"
 

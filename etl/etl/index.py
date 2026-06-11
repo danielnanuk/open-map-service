@@ -1,5 +1,6 @@
 """PostGIS → OpenSearch:时间戳索引名 + alias 原子切换,实现零停机重建。"""
 import json
+import os
 import time
 import uuid
 from pathlib import Path
@@ -8,13 +9,13 @@ from typing import Iterable, Iterator
 import psycopg
 import requests
 
-ALIAS = "places"
+ALIAS = os.environ.get("OPENSEARCH_ALIAS", "places")
 _TIMEOUT = (5, 120)  # connect, read — 防止 OS 假死导致 ETL 永久挂起
 _MAPPINGS = json.loads((Path(__file__).parent / "mappings.json").read_text())
 
 
 def create_index(base_url: str) -> str:
-    name = f"places-{time.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    name = f"{ALIAS}-{time.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
     requests.put(f"{base_url}/{name}", json=_MAPPINGS, timeout=_TIMEOUT).raise_for_status()
     return name
 

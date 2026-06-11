@@ -52,9 +52,7 @@ curl -s -X POST localhost:8080/distanceMatrix/v2:computeRouteMatrix -H 'Content-
 - Python 集成(需 `make up && make migrate`):`make test-py-integration`
 - 端到端:`make golden`
 
-⚠️ 集成测试对共享开发库是破坏性的(TRUNCATE 表、切换索引 alias):跑过
-`test-py-integration` 之后,先 `make etl-load etl-conflate etl-index` 恢复真实数据
-再 `make golden`。(M5 将引入独立测试库。)
+集成测试使用独立 places_test 库与 places_test alias(`make migrate-test` 一次性建库),不影响生产数据。
 
 ## 数据基线(2026-06-10)
 
