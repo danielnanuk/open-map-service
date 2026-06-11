@@ -7,7 +7,8 @@ import yaml
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8080"
 ENDPOINTS = {"searchText": "/v1/places:searchText", "searchNearby": "/v1/places:searchNearby",
-             "autocomplete": "/v1/places:autocomplete", "geocode": "/maps/api/geocode/json"}
+             "autocomplete": "/v1/places:autocomplete", "geocode": "/maps/api/geocode/json",
+             "routes": "/directions/v2:computeRoutes"}
 
 def run_case(case: dict) -> tuple[bool, str]:
     if case["endpoint"] == "geocode":
@@ -22,6 +23,13 @@ def run_case(case: dict) -> tuple[bool, str]:
     if "expect_min_results" in case:
         n = len(body.get("places") or body.get("suggestions") or body.get("results") or [])
         return n >= case["expect_min_results"], f"results={n} (min {case['expect_min_results']})"
+    if "expect_distance_km" in case:
+        routes = body.get("routes") or []
+        if not routes:
+            return False, "no routes"
+        km = routes[0]["distanceMeters"] / 1000
+        lo, hi = case["expect_distance_km"]
+        return lo <= km <= hi, f"distance={km:.1f}km (want {lo}-{hi})"
     blob = json.dumps(body, ensure_ascii=False)
     hit = next((e for e in case["expect_any"] if e in blob), None)
     return hit is not None, f"matched={hit!r}" if hit else f"none of {case['expect_any']} in top results"

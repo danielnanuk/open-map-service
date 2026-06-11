@@ -68,10 +68,12 @@ services:
       DATABASE_URL: postgresql://places:places@postgis:5432/places
       OPENSEARCH_URL: http://opensearch:9200
       NOMINATIM_URL: http://nominatim:8080
+      VALHALLA_URL: http://valhalla:8002
     ports: ["8080:8080"]
     depends_on:
       postgis: {condition: service_healthy}
       opensearch: {condition: service_healthy}
+      valhalla: {condition: service_healthy}
 
 volumes:
   pgdata:

@@ -53,3 +53,32 @@
   params: {latlng: "11.5621,104.9160"}
   expect_status: OK
   expect_any: ["Phnom Penh", "ភ្នំពេញ", "ផ្សារ"]
+- name: routes_pp_to_siemreap_drive
+  endpoint: routes
+  body:
+    origin: {location: {latLng: {latitude: 11.5564, longitude: 104.9282}}}
+    destination: {location: {latLng: {latitude: 13.3633, longitude: 103.8564}}}
+    travelMode: DRIVE
+  expect_distance_km: [280, 400]
+- name: routes_pp_moto_crosstown
+  endpoint: routes
+  body:
+    origin: {location: {latLng: {latitude: 11.5564, longitude: 104.9282}}}
+    destination: {location: {latLng: {latitude: 11.5984, longitude: 104.9192}}}
+    travelMode: TWO_WHEELER
+  expect_distance_km: [4, 12]
+- name: routes_tuktuk_extension
+  endpoint: routes
+  body:
+    origin: {location: {latLng: {latitude: 11.5564, longitude: 104.9282}}}
+    destination: {location: {latLng: {latitude: 11.5696, longitude: 104.9210}}}
+    travelMode: TWO_WHEELER
+    vehicleProfile: tuktuk
+  expect_distance_km: [1, 6]
+- name: routes_walk_short
+  endpoint: routes
+  body:
+    origin: {location: {latLng: {latitude: 11.5564, longitude: 104.9282}}}
+    destination: {location: {latLng: {latitude: 11.5625, longitude: 104.9311}}}
+    travelMode: WALK
+  expect_distance_km: [0.3, 3]
