@@ -82,3 +82,28 @@
     destination: {location: {latLng: {latitude: 11.5625, longitude: 104.9311}}}
     travelMode: WALK
   expect_distance_km: [0.3, 3]
+- name: matrix_small_3x3_drive
+  endpoint: matrix
+  body:
+    origins:
+      - {waypoint: {location: {latLng: {latitude: 11.5564, longitude: 104.9282}}}}
+      - {waypoint: {location: {latLng: {latitude: 11.5696, longitude: 104.9210}}}}
+      - {waypoint: {location: {latLng: {latitude: 11.5446, longitude: 104.9160}}}}
+    destinations:
+      - {waypoint: {location: {latLng: {latitude: 11.5984, longitude: 104.9192}}}}
+      - {waypoint: {location: {latLng: {latitude: 11.5625, longitude: 104.9311}}}}
+      - {waypoint: {location: {latLng: {latitude: 11.5468, longitude: 104.8943}}}}
+    travelMode: DRIVE
+  expect_matrix_elements: 9
+- name: matrix_tuktuk_2x2
+  endpoint: matrix
+  body:
+    origins:
+      - {waypoint: {location: {latLng: {latitude: 11.5564, longitude: 104.9282}}}}
+      - {waypoint: {location: {latLng: {latitude: 11.5696, longitude: 104.9210}}}}
+    destinations:
+      - {waypoint: {location: {latLng: {latitude: 11.5984, longitude: 104.9192}}}}
+      - {waypoint: {location: {latLng: {latitude: 11.5625, longitude: 104.9311}}}}
+    travelMode: TWO_WHEELER
+    vehicleProfile: tuktuk
+  expect_matrix_elements: 4

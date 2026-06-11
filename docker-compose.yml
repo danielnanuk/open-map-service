@@ -69,9 +69,12 @@ services:
       OPENSEARCH_URL: http://opensearch:9200
       NOMINATIM_URL: http://nominatim:8080
       VALHALLA_URL: http://valhalla:8002
+      OSRM_CAR_URL: http://osrm-car:5000
+      OSRM_MOTO_URL: http://osrm-moto:5000
+      OSRM_TUKTUK_URL: http://osrm-tuktuk:5000
     ports: ["8080:8080"]
     depends_on:
-      # nominatim 故意不在列:geocode 可降级回退 OpenSearch(M2 实测);valhalla 无回退,需 healthy
+      # nominatim/osrm-* 故意不在列:geocode 可回退 OpenSearch、matrix 可降级 Valhalla;valhalla 无回退,需 healthy
       postgis: {condition: service_healthy}
       opensearch: {condition: service_healthy}
       valhalla: {condition: service_healthy}
