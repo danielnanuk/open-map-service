@@ -29,11 +29,29 @@ services:
       retries: 30
       start_period: 60s
 
+  nominatim:
+    image: mediagis/nominatim:5.1
+    environment:
+      PBF_PATH: /pbf/cambodia-latest.osm.pbf
+      NOMINATIM_PASSWORD: nominatim_places
+      THREADS: "4"
+    ports: ["127.0.0.1:8081:8080"]
+    volumes:
+      - ./data/cambodia-latest.osm.pbf:/pbf/cambodia-latest.osm.pbf:ro
+      - nominatim-data:/var/lib/postgresql/16/main
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 120
+      start_period: 300s
+
   gateway:
     build: gateway
     environment:
       DATABASE_URL: postgresql://places:places@postgis:5432/places
       OPENSEARCH_URL: http://opensearch:9200
+      NOMINATIM_URL: http://nominatim:8080
     ports: ["8080:8080"]
     depends_on:
       postgis: {condition: service_healthy}
@@ -42,3 +60,4 @@ services:
 volumes:
   pgdata:
   osdata:
+  nominatim-data:

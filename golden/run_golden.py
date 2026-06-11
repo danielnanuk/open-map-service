@@ -7,15 +7,20 @@ import yaml
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8080"
 ENDPOINTS = {"searchText": "/v1/places:searchText", "searchNearby": "/v1/places:searchNearby",
-             "autocomplete": "/v1/places:autocomplete"}
+             "autocomplete": "/v1/places:autocomplete", "geocode": "/maps/api/geocode/json"}
 
 def run_case(case: dict) -> tuple[bool, str]:
-    r = requests.post(BASE + ENDPOINTS[case["endpoint"]], json=case["body"], timeout=10)
+    if case["endpoint"] == "geocode":
+        r = requests.get(BASE + ENDPOINTS["geocode"], params=case["params"], timeout=10)
+    else:
+        r = requests.post(BASE + ENDPOINTS[case["endpoint"]], json=case["body"], timeout=10)
     if r.status_code != 200:
         return False, f"HTTP {r.status_code}: {r.text[:200]}"
     body = r.json()
+    if case.get("expect_status") and body.get("status") != case["expect_status"]:
+        return False, f"status={body.get('status')} want {case['expect_status']}"
     if "expect_min_results" in case:
-        n = len(body.get("places") or body.get("suggestions") or [])
+        n = len(body.get("places") or body.get("suggestions") or body.get("results") or [])
         return n >= case["expect_min_results"], f"results={n} (min {case['expect_min_results']})"
     blob = json.dumps(body, ensure_ascii=False)
     hit = next((e for e in case["expect_any"] if e in blob), None)

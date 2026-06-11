@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -23,6 +24,26 @@ type Doc struct {
 		Lat float64 `json:"lat"`
 		Lon float64 `json:"lon"`
 	} `json:"location"`
+}
+
+// LocalizedName 按 BCP-47 语言码选展示名,缺失回退 name_default。
+func (d Doc) LocalizedName(lang string) string {
+	primary, _, _ := strings.Cut(lang, "-")
+	switch strings.ToLower(primary) {
+	case "km":
+		if d.NameKm != "" {
+			return d.NameKm
+		}
+	case "zh":
+		if d.NameZh != "" {
+			return d.NameZh
+		}
+	case "en":
+		if d.NameEn != "" {
+			return d.NameEn
+		}
+	}
+	return d.NameDefault
 }
 
 type Client struct {

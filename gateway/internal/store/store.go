@@ -53,3 +53,29 @@ func (p *PG) GetPlace(ctx context.Context, id string) (*PlaceRow, error) {
 	}
 	return &out, nil
 }
+
+// GetNearbyPlaces 返回距 (lat,lon) 半径 radiusM 米内最近的 limit 个地点(近→远)。
+func (p *PG) GetNearbyPlaces(ctx context.Context, lat, lon, radiusM float64, limit int) ([]PlaceRow, error) {
+	rows, err := p.pool.Query(ctx, `
+		SELECT place_id, names, categories,
+		       COALESCE(phone,''), COALESCE(website,''), COALESCE(opening_hours,''),
+		       COALESCE(address, '{}'::jsonb), ST_X(geom), ST_Y(geom)
+		FROM places
+		WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography, $3)
+		ORDER BY geom <-> ST_SetSRID(ST_MakePoint($2, $1), 4326)
+		LIMIT $4`, lat, lon, radiusM, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PlaceRow
+	for rows.Next() {
+		var r PlaceRow
+		if err := rows.Scan(&r.PlaceID, &r.Names, &r.Categories,
+			&r.Phone, &r.Website, &r.OpeningHours, &r.Address, &r.Lon, &r.Lat); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}

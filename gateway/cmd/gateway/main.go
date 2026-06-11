@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/danielnanuk/open-map-service/gateway/internal/geocode"
 	"github.com/danielnanuk/open-map-service/gateway/internal/httpapi"
 	"github.com/danielnanuk/open-map-service/gateway/internal/search"
 	"github.com/danielnanuk/open-map-service/gateway/internal/store"
@@ -21,19 +22,21 @@ func env(key, def string) string {
 func main() {
 	osURL := env("OPENSEARCH_URL", "http://localhost:9200")
 	dsn := env("DATABASE_URL", "postgresql://places:places@localhost:5432/places")
+	nmURL := env("NOMINATIM_URL", "http://localhost:8081")
 	port := env("PORT", "8080")
 
 	pg, err := store.NewPG(context.Background(), dsn)
 	if err != nil {
 		log.Fatalf("postgres: %v", err)
 	}
-	h := httpapi.New(search.New(osURL), pg)
+	h := httpapi.NewWithGeocoder(search.New(osURL), pg, geocode.NewNominatim(nmURL))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/places:searchText", h.SearchText)
 	mux.HandleFunc("POST /v1/places:searchNearby", h.SearchNearby)
 	mux.HandleFunc("POST /v1/places:autocomplete", h.Autocomplete)
 	mux.HandleFunc("GET /v1/places/{id}", h.GetPlace)
+	mux.HandleFunc("GET /maps/api/geocode/json", h.Geocode)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
