@@ -13,7 +13,8 @@ help:
 up:
 	@test -f data/cambodia-latest.osm.pbf || \
 	  (echo "ERROR: data/cambodia-latest.osm.pbf missing. Run: make etl-osm" && exit 1)
-	docker compose up -d --build postgis opensearch nominatim
+	@mkdir -p data/valhalla && cp -n data/cambodia-latest.osm.pbf data/valhalla/ 2>/dev/null || true
+	docker compose up -d --build postgis opensearch nominatim valhalla
 	docker compose ps
 
 down:
