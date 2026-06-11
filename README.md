@@ -6,12 +6,13 @@
 ## 快速开始
 
 ```bash
-make up            # postgis + opensearch + nominatim + valhalla(首次建图 ~1-3 分钟)
+make osrm-build    # 首次需要:提取三套 OSRM 图(car/moto/tuktuk,~3-5 分钟)
+make up            # postgis + opensearch + nominatim + valhalla + 三个 OSRM 实例
 make migrate       # 建表
 make py-setup      # python venv
 make etl-all       # overture 下载→转换→osm 抽取→入库→conflation→索引(首次约 10-30 分钟)
 make up-all        # 启动 gateway
-make golden        # 黄金查询集验收(16 cases: 12 places/geocode + 4 routes)
+make golden        # 黄金查询集验收(18 cases: 12 places/geocode + 4 routes + 2 matrix)
 ```
 
 首次启动 Nominatim 会执行一次性导入(柬埔寨 ~5-15 分钟,`docker logs places-nominatim-1` 看进度,
@@ -38,6 +39,10 @@ curl -s 'localhost:8080/maps/api/geocode/json?latlng=11.5621,104.9160'
 # 路线规划(嘟嘟车,协议扩展 vehicleProfile)
 curl -s -X POST localhost:8080/directions/v2:computeRoutes -H 'Content-Type: application/json' \
   -d '{"origin":{"location":{"latLng":{"latitude":11.5564,"longitude":104.9282}}},"destination":{"location":{"latLng":{"latitude":11.5696,"longitude":104.9210}}},"travelMode":"TWO_WHEELER","vehicleProfile":"tuktuk"}'
+
+# 距离矩阵(2 起点 × 2 终点 = 4 元素,返回 JSON 数组)
+curl -s -X POST localhost:8080/distanceMatrix/v2:computeRouteMatrix -H 'Content-Type: application/json' \
+  -d '{"origins":[{"waypoint":{"location":{"latLng":{"latitude":11.5564,"longitude":104.9282}}}},{"waypoint":{"location":{"latLng":{"latitude":11.5696,"longitude":104.9210}}}}],"destinations":[{"waypoint":{"location":{"latLng":{"latitude":11.5984,"longitude":104.9192}}}},{"waypoint":{"location":{"latLng":{"latitude":11.5625,"longitude":104.9311}}}}],"travelMode":"DRIVE"}'
 ```
 
 ## 测试
@@ -75,3 +80,17 @@ curl -s -X POST localhost:8080/directions/v2:computeRoutes -H 'Content-Type: app
 - computeRoutes 响应暂不含逐向指令(maneuvers);languageCode 已透传 Valhalla 备用。
   后续暴露指令时的现状:Valhalla 3.7 无 km/zh locale——动词回退英文,
   高棉文路名(OSM name:km)正常呈现;zh 完全回退英文
+- computeRouteMatrix 一次性返回完整 JSON 数组(Google 为流式),且元素上限远超
+  Google(625):单侧 ≤1000(100 万元素);>2,500 元素走 OSRM,小矩阵走 Valhalla,
+  OSRM 故障自动降级 Valhalla 分块(变慢但可用)
+- 阈值两侧 duration 建模不同(实测同 OD 同路线,Valhalla 含转弯/路口惩罚,
+  时长约为 OSRM 自由流的 ~2 倍;distance 两侧一致)——跨阈值对比时长需留意,
+  速度模型校准记 M5
+
+## Matrix 基准(2026-06-11,8C/32GB 单机)
+
+- 500×500(25 万元素,OSRM):car 3.74s / moto 4.25s / tuktuk 4.42s(验收线 <10s,均 PASS)
+- 60×60 经 OSRM:0.29s;经 Valhalla 降级(osrm-car 停机实测):5.29s——变慢但可用
+- 阈值:>2,500 元素走 OSRM;≤2,500 走 Valhalla(单次上限 50×50,超出自动分块)
+- 降级:OSRM 故障自动回退 Valhalla 分块(网关日志 "falling back");500×500 兜底
+  外推约 ~100 秒(串行分块,并发优化记 M5)

@@ -8,7 +8,8 @@ import yaml
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8080"
 ENDPOINTS = {"searchText": "/v1/places:searchText", "searchNearby": "/v1/places:searchNearby",
              "autocomplete": "/v1/places:autocomplete", "geocode": "/maps/api/geocode/json",
-             "routes": "/directions/v2:computeRoutes"}
+             "routes": "/directions/v2:computeRoutes",
+             "matrix": "/distanceMatrix/v2:computeRouteMatrix"}
 
 def run_case(case: dict) -> tuple[bool, str]:
     if case["endpoint"] == "geocode":
@@ -18,7 +19,7 @@ def run_case(case: dict) -> tuple[bool, str]:
     if r.status_code != 200:
         return False, f"HTTP {r.status_code}: {r.text[:200]}"
     body = r.json()
-    if case.get("expect_status") and body.get("status") != case["expect_status"]:
+    if case.get("expect_status") and isinstance(body, dict) and body.get("status") != case["expect_status"]:
         return False, f"status={body.get('status')} want {case['expect_status']}"
     if "expect_min_results" in case:
         n = len(body.get("places") or body.get("suggestions") or body.get("results") or [])
@@ -30,6 +31,13 @@ def run_case(case: dict) -> tuple[bool, str]:
         km = routes[0]["distanceMeters"] / 1000
         lo, hi = case["expect_distance_km"]
         return lo <= km <= hi, f"distance={km:.1f}km (want {lo}-{hi})"
+    if "expect_matrix_elements" in case:
+        if not isinstance(body, list):
+            return False, f"matrix response not a list: {str(body)[:120]}"
+        exists = sum(1 for e in body if e.get("condition") == "ROUTE_EXISTS")
+        want = case["expect_matrix_elements"]
+        return len(body) == want and exists > 0, \
+            f"elements={len(body)} exists={exists} (want {want})"
     blob = json.dumps(body, ensure_ascii=False)
     hit = next((e for e in case["expect_any"] if e in blob), None)
     return hit is not None, f"matched={hit!r}" if hit else f"none of {case['expect_any']} in top results"

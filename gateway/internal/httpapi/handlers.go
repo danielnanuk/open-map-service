@@ -29,10 +29,12 @@ var dataAttributions = []gapi.Attribution{
 }
 
 type Handlers struct {
-	searcher Searcher
-	store    PlaceStore
-	geocoder Geocoder
-	router   Router
+	searcher       Searcher
+	store          PlaceStore
+	geocoder       Geocoder
+	router         Router
+	matrixRouters  map[string]MatrixRouter
+	matrixFallback MatrixRouter
 }
 
 func New(s Searcher, ps PlaceStore) *Handlers {

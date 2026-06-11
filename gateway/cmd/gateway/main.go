@@ -31,8 +31,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("postgres: %v", err)
 	}
+	osrmRouters := map[string]httpapi.MatrixRouter{
+		"auto":          route.NewOSRM(env("OSRM_CAR_URL", "http://localhost:5000")),
+		"motor_scooter": route.NewOSRM(env("OSRM_MOTO_URL", "http://localhost:5001")),
+		"tuktuk":        route.NewOSRM(env("OSRM_TUKTUK_URL", "http://localhost:5002")),
+	}
+	vh := route.New(vhURL)
 	h := httpapi.NewWithGeocoder(search.New(osURL), pg, geocode.NewNominatim(nmURL)).
-		WithRouter(route.New(vhURL))
+		WithRouter(vh).
+		WithMatrix(osrmRouters, vh)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/places:searchText", h.SearchText)
@@ -41,6 +48,7 @@ func main() {
 	mux.HandleFunc("GET /v1/places/{id}", h.GetPlace)
 	mux.HandleFunc("GET /maps/api/geocode/json", h.Geocode)
 	mux.HandleFunc("POST /directions/v2:computeRoutes", h.ComputeRoutes)
+	mux.HandleFunc("POST /distanceMatrix/v2:computeRouteMatrix", h.ComputeRouteMatrix)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))

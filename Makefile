@@ -4,6 +4,8 @@ export OPENSEARCH_URL ?= http://localhost:9200
 PY := etl/.venv/bin/python
 PIP := etl/.venv/bin/pip
 PYTEST := etl/.venv/bin/pytest
+OSRM_IMG ?= ghcr.io/project-osrm/osrm-backend:latest
+OSRM_PROFILES := car moto tuktuk
 
 .PHONY: help
 help:
@@ -15,8 +17,25 @@ up:
 	  (echo "ERROR: data/cambodia-latest.osm.pbf missing. Run: make etl-osm" && exit 1)
 	# cp -n 有意不覆盖:etl-osm 更新 PBF 后 valhalla 瓦片重建属 M5 更新管道,届时需手动清 data/valhalla 重建
 	@mkdir -p data/valhalla && cp -n data/cambodia-latest.osm.pbf data/valhalla/ 2>/dev/null || true
-	docker compose up -d --build postgis opensearch nominatim valhalla
+	docker compose up -d --build postgis opensearch nominatim valhalla osrm-car osrm-moto osrm-tuktuk
 	docker compose ps
+
+.PHONY: osrm-build
+osrm-build:
+	@test -f data/cambodia-latest.osm.pbf || \
+	  (echo "ERROR: data/cambodia-latest.osm.pbf missing. Run: make etl-osm" && exit 1)
+	@for p in $(OSRM_PROFILES); do \
+	  echo "== building $$p =="; \
+	  mkdir -p data/osrm/$$p; \
+	  cp -f data/cambodia-latest.osm.pbf data/osrm/$$p/; \
+	  if [ "$$p" = "car" ]; then PROF=/opt/car.lua; else PROF=/profiles/$$p.lua; fi; \
+	  docker run --rm -v $(PWD)/data/osrm/$$p:/data -v $(PWD)/profiles:/profiles \
+	    $(OSRM_IMG) osrm-extract -p $$PROF /data/cambodia-latest.osm.pbf && \
+	  docker run --rm -v $(PWD)/data/osrm/$$p:/data \
+	    $(OSRM_IMG) osrm-partition /data/cambodia-latest.osrm && \
+	  docker run --rm -v $(PWD)/data/osrm/$$p:/data \
+	    $(OSRM_IMG) osrm-customize /data/cambodia-latest.osrm || exit 1; \
+	done
 
 down:
 	docker compose down
