@@ -11,6 +11,8 @@ help:
 
 .PHONY: up down
 up:
+	@test -f data/cambodia-latest.osm.pbf || \
+	  (echo "ERROR: data/cambodia-latest.osm.pbf missing. Run: make etl-osm" && exit 1)
 	docker compose up -d --build postgis opensearch nominatim
 	docker compose ps
 
