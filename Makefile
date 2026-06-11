@@ -103,8 +103,9 @@ etl-all: etl-overture etl-osm etl-load etl-conflate etl-index
 .PHONY: gen-api-key
 gen-api-key:
 	@KEY=$$(openssl rand -hex 24); \
-	docker exec places-postgis-1 psql -U places -d places -c \
-	  "INSERT INTO api_keys (key, name) VALUES ('$$KEY', '$(or $(NAME),default)')" >/dev/null && \
+	echo "INSERT INTO api_keys (key, name) VALUES (:'key', :'name');" | \
+	docker exec -i places-postgis-1 psql -U places -d places \
+	  -v key="$$KEY" -v name="$(or $(NAME),default)" >/dev/null && \
 	echo "API key: $$KEY"
 
 .PHONY: test-go up-all golden

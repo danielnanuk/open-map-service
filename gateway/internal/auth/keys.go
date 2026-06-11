@@ -57,14 +57,16 @@ func (s *Store) Check(ctx context.Context, key string) Decision {
 				return DecisionDenied
 			}
 		} else {
-			ne := &entry{rpm: rpm, ok: ok, expiresAt: time.Now().Add(s.ttl)}
-			if ok {
-				ne.limiter = rate.NewLimiter(rate.Limit(float64(rpm)/60.0), rpm)
+			if !ok { // 未知 key 不入缓存:防随机 key 灌注撑爆 map(负缓存对攻击者无收益)
+				return DecisionDenied
 			}
+			ne := &entry{rpm: rpm, ok: true, expiresAt: time.Now().Add(s.ttl)}
+			ne.limiter = rate.NewLimiter(rate.Limit(float64(rpm)/60.0), rpm)
 			s.mu.Lock()
-			if hit && e.ok && ok { // 保留既有桶,避免刷新清空配额状态
+			if hit && e.ok { // 保留既有桶,避免刷新清空配额状态
 				ne.limiter = e.limiter
 			}
+			// 注:同 key 并发首查存在双查窗口,后写覆盖前写至多放宽 1 个请求——有意取舍,不引入 singleflight
 			s.m[key] = ne
 			e = ne
 			s.mu.Unlock()
