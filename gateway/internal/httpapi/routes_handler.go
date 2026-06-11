@@ -52,6 +52,10 @@ func tripToRoute(t *route.Trip) gapi.Route {
 }
 
 func (h *Handlers) ComputeRoutes(w http.ResponseWriter, r *http.Request) {
+	if h.router == nil { // 未经 WithRouter 装配:干净 500 而不是 nil panic
+		internal(w, fmt.Errorf("router not configured"))
+		return
+	}
 	var req gapi.ComputeRoutesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		invalidArgument(w, "invalid request body")

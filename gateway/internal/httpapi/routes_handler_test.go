@@ -101,3 +101,16 @@ func TestComputeRoutesNoPathIsEmptyRoutes(t *testing.T) {
 		t.Fatalf("want empty routes array: %v", out)
 	}
 }
+
+func TestComputeRoutesBadJSONAndNilRouter(t *testing.T) {
+	h := NewWithGeocoder(&fakeSearcher{}, nil, &fakeGeocoder{}).WithRouter(&fakeRouter{})
+	code, _ := routesPOST(t, h, `{bad json`)
+	if code != 400 {
+		t.Fatalf("bad json: want 400, got %d", code)
+	}
+	hNil := NewWithGeocoder(&fakeSearcher{}, nil, &fakeGeocoder{}) // 未装配 router
+	code, _ = routesPOST(t, hNil, validRoutesBody)
+	if code != 500 {
+		t.Fatalf("nil router: want clean 500, got %d", code)
+	}
+}
