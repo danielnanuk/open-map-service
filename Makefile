@@ -17,7 +17,7 @@ up:
 	  (echo "ERROR: data/cambodia-latest.osm.pbf missing. Run: make etl-osm" && exit 1)
 	# cp -n 有意不覆盖:etl-osm 更新 PBF 后 valhalla 瓦片重建属 M5 更新管道,届时需手动清 data/valhalla 重建
 	@mkdir -p data/valhalla && cp -n data/cambodia-latest.osm.pbf data/valhalla/ 2>/dev/null || true
-	docker compose up -d --build postgis opensearch nominatim valhalla osrm-car osrm-moto osrm-tuktuk
+	docker compose up -d --build postgis opensearch nominatim valhalla osrm-car osrm-moto osrm-tuktuk prometheus
 	docker compose ps
 
 .PHONY: osrm-build

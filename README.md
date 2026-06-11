@@ -87,6 +87,40 @@ curl -s -X POST localhost:8080/distanceMatrix/v2:computeRouteMatrix -H 'Content-
   时长约为 OSRM 自由流的 ~2 倍;distance 两侧一致)——跨阈值对比时长需留意,
   速度模型校准记 M5
 
+## 监控
+
+### 指标
+
+网关暴露四类 Prometheus 指标,路径 `http://localhost:8080/metrics`：
+
+| 指标 | 类型 | 说明 |
+|------|------|------|
+| `gateway_http_requests_total{path,status}` | Counter | 每条路径×状态码的请求计数 |
+| `gateway_http_request_duration_seconds{path}` | Histogram | 请求延迟(桶:10ms–30s) |
+| `gateway_backend_errors_total{backend}` | Counter | 上游后端(nominatim/opensearch/osrm/valhalla)失败计数 |
+| `gateway_zero_results_total{path}` | Counter | 返回空结果的请求数(spec §9 数据质量哨兵) |
+
+### Prometheus UI
+
+启动后访问 `http://127.0.0.1:9090`（仅本机可达）。
+
+### 告警规则
+
+规则文件 `deploy/prometheus/rules.yml`，共四条：
+
+| 告警 | 条件 | 等级 |
+|------|------|------|
+| `GatewayHighErrorRate` | 5xx 比例 >5% 持续 5 分钟 | critical |
+| `BackendErrorsSpiking` | 上游错误率 >0.5/s 持续 5 分钟 | warning |
+| `ZeroResultsSurge` | ZERO_RESULTS 比例 >30% 持续 15 分钟 | warning |
+| `GatewayP99High` | P99 延迟 >10s 持续 10 分钟 | warning |
+
+通知渠道由 Alertmanager 接入，M5 仅交付规则与 `ALERTS` 序列，不含 Alertmanager 配置。
+
+**分母过滤说明：** 比例类规则(`GatewayHighErrorRate`、`ZeroResultsSurge`)的分母
+过滤掉 `/metrics`、`/healthz`、`_unmatched`（路由未命中路径），避免低流量或健康检查
+流量导致噪音误报；分母同时用 `clamp_min(..., 0.001)` 防除零。
+
 ## Matrix 基准(2026-06-11,8C/32GB 单机)
 
 - 500×500(25 万元素,OSRM):car 3.74s / moto 4.25s / tuktuk 4.42s(验收线 <10s,均 PASS)
