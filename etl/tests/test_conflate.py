@@ -6,7 +6,7 @@ import pytest
 from etl.conflate import conflate
 
 pytestmark = pytest.mark.integration
-DSN = os.environ.get("DATABASE_URL", "postgresql://places:places@localhost:5432/places")
+DSN = os.environ.get("DATABASE_URL", "postgresql://places:places@localhost:5432/places_test")
 
 @pytest.fixture()
 def conn():

@@ -4,7 +4,7 @@ export OPENSEARCH_URL ?= http://localhost:9200
 PY := etl/.venv/bin/python
 PIP := etl/.venv/bin/pip
 PYTEST := etl/.venv/bin/pytest
-OSRM_IMG ?= ghcr.io/project-osrm/osrm-backend:latest
+OSRM_IMG ?= ghcr.io/project-osrm/osrm-backend@sha256:7e2d775e5dd1f6752f679621e79dcff3b6bc37266733c771a360af9b3d652205
 OSRM_PROFILES := car moto tuktuk
 
 .PHONY: help
@@ -17,7 +17,7 @@ up:
 	  (echo "ERROR: data/cambodia-latest.osm.pbf missing. Run: make etl-osm" && exit 1)
 	# cp -n 有意不覆盖:etl-osm 更新 PBF 后 valhalla 瓦片重建属 M5 更新管道,届时需手动清 data/valhalla 重建
 	@mkdir -p data/valhalla && cp -n data/cambodia-latest.osm.pbf data/valhalla/ 2>/dev/null || true
-	docker compose up -d --build postgis opensearch nominatim valhalla osrm-car osrm-moto osrm-tuktuk
+	docker compose up -d --build postgis opensearch nominatim valhalla osrm-car osrm-moto osrm-tuktuk prometheus
 	docker compose ps
 
 .PHONY: osrm-build
@@ -44,6 +44,12 @@ down:
 migrate:
 	bash db/migrate.sh
 
+.PHONY: migrate-test
+migrate-test:
+	docker exec places-postgis-1 psql -U places -d places -tA -c "SELECT 1 FROM pg_database WHERE datname='places_test'" | grep -q 1 || \
+	  docker exec places-postgis-1 psql -U places -d places -c "CREATE DATABASE places_test"
+	TARGET_DB=places_test bash db/migrate.sh
+
 .PHONY: py-setup test-py test-py-integration
 py-setup:
 	python3 -m venv etl/.venv
@@ -53,7 +59,7 @@ test-py:
 	cd etl && .venv/bin/pytest -m "not integration" -q
 
 test-py-integration:
-	cd etl && .venv/bin/pytest -m integration -q
+	cd etl && DATABASE_URL=postgresql://places:places@localhost:5432/places_test OPENSEARCH_ALIAS=places_test .venv/bin/pytest -m integration -q
 
 .PHONY: etl-overture probe-overture
 etl-overture:
@@ -96,9 +102,22 @@ url = os.environ['OPENSEARCH_URL']; \
 conn = psycopg.connect(os.environ['DATABASE_URL']); \
 name = create_index(url); \
 print('indexed:', bulk_index(url, name, rows_from_postgis(conn))); \
-swap_alias(url, name); print('alias ->', name)"
+prev = swap_alias(url, name); print('alias ->', name); \
+print('pruned:', prune_old_indices(url, {name, *prev[:1]}))"
 
 etl-all: etl-overture etl-osm etl-load etl-conflate etl-index
+
+.PHONY: gen-api-key
+gen-api-key:
+	@KEY=$$(openssl rand -hex 24); \
+	echo "INSERT INTO api_keys (key, name) VALUES (:'key', :'name');" | \
+	docker exec -i places-postgis-1 psql -U places -d places \
+	  -v key="$$KEY" -v name="$(or $(NAME),default)" >/dev/null && \
+	echo "API key: $$KEY"
+
+.PHONY: update-all
+update-all:
+	bash scripts/update_pipeline.sh
 
 .PHONY: test-go up-all golden
 test-go:

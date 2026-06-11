@@ -1,9 +1,19 @@
 """Overture 柬埔寨抽取:download() 调 overturemaps CLI;transform() 用 DuckDB 拍平 nested schema。"""
 import subprocess
+import sys
+from pathlib import Path
+
 import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
+
 from etl.categories import overture_to_google
+
+
+def _overturemaps_cli() -> str:
+    """优先取当前解释器同目录(venv/bin)的 CLI:cron/bash 环境的 PATH 不含 venv(M5 管道实测)。"""
+    sibling = Path(sys.executable).with_name("overturemaps")
+    return str(sibling) if sibling.exists() else "overturemaps"
 
 CAMBODIA_BBOX = "102.33,9.90,107.63,14.70"
 
@@ -33,9 +43,10 @@ WHERE names."primary" IS NOT NULL
 
 def download(out_places: str, out_divisions: str) -> None:
     # NOTE: -t/--type are aliases; both work in overturemaps 1.0.0
-    subprocess.run(["overturemaps", "download", f"--bbox={CAMBODIA_BBOX}",
+    cli = _overturemaps_cli()
+    subprocess.run([cli, "download", f"--bbox={CAMBODIA_BBOX}",
                     "-f", "geoparquet", "-t", "place", "-o", out_places], check=True)
-    subprocess.run(["overturemaps", "download", f"--bbox={CAMBODIA_BBOX}",
+    subprocess.run([cli, "download", f"--bbox={CAMBODIA_BBOX}",
                     "-f", "geoparquet", "-t", "division_area", "-o", out_divisions], check=True)
 
 def transform(raw_parquet: str, out_parquet: str) -> int:

@@ -1,0 +1,29 @@
+# deploy/prometheus/rules.yml — 告警规则(通知渠道由运维接 Alertmanager,M5 仅产出规则与 ALERTS 序列)
+# 比例类规则分母过滤噪音路径(/metrics、/healthz、_unmatched),防止低流量时误报。
+groups:
+  - name: places
+    rules:
+      - alert: GatewayHighErrorRate
+        expr: >
+          sum(rate(gateway_http_requests_total{status=~"5..",path!~"/metrics|/healthz|_unmatched"}[5m]))
+            / clamp_min(sum(rate(gateway_http_requests_total{path!~"/metrics|/healthz|_unmatched"}[5m])), 0.001) > 0.05
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "5xx 比例 >5% 持续 5 分钟"}
+      - alert: BackendErrorsSpiking
+        expr: sum(rate(gateway_backend_errors_total[5m])) > 0.5
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "上游后端错误率异常"}
+      - alert: ZeroResultsSurge
+        expr: >
+          sum(rate(gateway_zero_results_total[15m]))
+            / clamp_min(sum(rate(gateway_http_requests_total{path!~"/metrics|/healthz|_unmatched"}[15m])), 0.001) > 0.3
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "ZERO_RESULTS 比例 >30%——数据质量哨兵(spec §9)"}
+      - alert: GatewayP99High
+        expr: histogram_quantile(0.99, sum(rate(gateway_http_request_duration_seconds_bucket[5m])) by (le)) > 10
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "P99 延迟 >10s"}
