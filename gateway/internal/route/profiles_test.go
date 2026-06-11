@@ -16,6 +16,7 @@ func TestTravelModeToCosting(t *testing.T) {
 		{"TWO_WHEELER", "tuktuk", "motor_scooter", false},
 		{"TRANSIT", "", "", true},
 		{"DRIVE", "tuktuk", "", true},
+		{"TWO_WHEELER", "cargo_bike", "", true}, // 未知扩展 profile
 	}
 	for _, c := range cases {
 		costing, opts, err := TravelModeToCosting(c.mode, c.profile)
@@ -27,7 +28,7 @@ func TestTravelModeToCosting(t *testing.T) {
 		}
 		if c.profile == "tuktuk" && err == nil {
 			mo, ok := opts["motor_scooter"].(map[string]any)
-			if !ok || mo["top_speed"] == nil {
+			if !ok || mo["top_speed"] != 40 || mo["use_highways"] != 0.1 {
 				t.Fatalf("tuktuk options: %v", opts)
 			}
 		}

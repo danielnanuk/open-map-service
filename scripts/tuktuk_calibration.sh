@@ -43,7 +43,7 @@ try:
   t=json.load(sys.stdin).get('trip',{}); s=t.get('summary',{})
   print(f\"{s.get('length',0):.2f},{s.get('time',0):.0f}\")
 except Exception:
-  print('ERR,ERR')"
+  print('ERR,ERR')" || echo "ERR,ERR" # curl 失败时也输出 ERR 行,不让 pipefail 中断全程
 }
 
 echo "od,auto_km,auto_s,scooter_km,scooter_s,tuktuk_km,tuktuk_s"
