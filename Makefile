@@ -100,6 +100,13 @@ swap_alias(url, name); print('alias ->', name)"
 
 etl-all: etl-overture etl-osm etl-load etl-conflate etl-index
 
+.PHONY: gen-api-key
+gen-api-key:
+	@KEY=$$(openssl rand -hex 24); \
+	docker exec places-postgis-1 psql -U places -d places -c \
+	  "INSERT INTO api_keys (key, name) VALUES ('$$KEY', '$(or $(NAME),default)')" >/dev/null && \
+	echo "API key: $$KEY"
+
 .PHONY: test-go up-all golden
 test-go:
 	cd gateway && go test ./...

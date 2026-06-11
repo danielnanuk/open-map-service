@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/danielnanuk/open-map-service/gateway/internal/auth"
 	"github.com/danielnanuk/open-map-service/gateway/internal/geocode"
 	"github.com/danielnanuk/open-map-service/gateway/internal/httpapi"
 	"github.com/danielnanuk/open-map-service/gateway/internal/route"
@@ -57,7 +58,9 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 
-	handler := httpapi.WithRequestID(mux)
+	authEnabled := env("AUTH_ENABLED", "false") == "true"
+	keyStore := auth.NewStore(pg, time.Minute)
+	handler := httpapi.WithRequestID(httpapi.WithAuth(authEnabled, keyStore)(mux))
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           handler,

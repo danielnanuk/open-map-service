@@ -3,7 +3,7 @@ services:
     image: postgis/postgis:16-3.4
     environment:
       POSTGRES_USER: places
-      POSTGRES_PASSWORD: places
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-places}
       POSTGRES_DB: places
     ports: ["127.0.0.1:5432:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
@@ -33,7 +33,7 @@ services:
     image: mediagis/nominatim:5.1
     environment:
       PBF_PATH: /pbf/cambodia-latest.osm.pbf
-      NOMINATIM_PASSWORD: nominatim_places
+      NOMINATIM_PASSWORD: ${NOMINATIM_PASSWORD:-nominatim_places}
       THREADS: "4"
     ports: ["127.0.0.1:8081:8080"]
     volumes:
@@ -65,13 +65,14 @@ services:
   gateway:
     build: gateway
     environment:
-      DATABASE_URL: postgresql://places:places@postgis:5432/places
+      DATABASE_URL: postgresql://places:${POSTGRES_PASSWORD:-places}@postgis:5432/places
       OPENSEARCH_URL: http://opensearch:9200
       NOMINATIM_URL: http://nominatim:8080
       VALHALLA_URL: http://valhalla:8002
       OSRM_CAR_URL: http://osrm-car:5000
       OSRM_MOTO_URL: http://osrm-moto:5000
       OSRM_TUKTUK_URL: http://osrm-tuktuk:5000
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
     ports: ["8080:8080"]
     depends_on:
       # nominatim/osrm-* 故意不在列:geocode 可回退 OpenSearch、matrix 可降级 Valhalla;valhalla 无回退,需 healthy

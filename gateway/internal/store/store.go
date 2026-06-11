@@ -54,6 +54,20 @@ func (p *PG) GetPlace(ctx context.Context, id string) (*PlaceRow, error) {
 	return &out, nil
 }
 
+// LookupKey 实现 auth.KeyDB。
+func (p *PG) LookupKey(ctx context.Context, key string) (int, bool, error) {
+	var rpm int
+	err := p.pool.QueryRow(ctx,
+		`SELECT rpm_limit FROM api_keys WHERE key = $1 AND active`, key).Scan(&rpm)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, false, nil
+		}
+		return 0, false, err
+	}
+	return rpm, true, nil
+}
+
 // GetNearbyPlaces 返回距 (lat,lon) 半径 radiusM 米内最近的 limit 个地点(近→远)。
 func (p *PG) GetNearbyPlaces(ctx context.Context, lat, lon, radiusM float64, limit int) ([]PlaceRow, error) {
 	rows, err := p.pool.Query(ctx, `
