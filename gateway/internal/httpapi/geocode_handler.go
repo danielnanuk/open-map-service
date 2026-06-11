@@ -86,16 +86,23 @@ func (h *Handlers) reverseGeocode(w http.ResponseWriter, r *http.Request, latlng
 		log.Printf("reverse nearby: %v", err)
 	} else {
 		for _, p := range rows {
-			results = append(results, placeRowToGeocodeResult(p))
+			results = append(results, placeRowToGeocodeResult(p, lang))
 		}
 	}
+	// 双源都失败时静默呈现 ZERO_RESULTS(不是 UNKNOWN_ERROR):逆向两个来源异构,
+	// 海面点的 store 错误与真零结果无法区分,surface 错误只会造成误报
 	writeGeocode(w, results, "")
 }
 
-func placeRowToGeocodeResult(p store.PlaceRow) gapi.GeocodeResult {
+func placeRowToGeocodeResult(p store.PlaceRow, lang string) gapi.GeocodeResult {
+	primary, _, _ := strings.Cut(lang, "-")
+	name := p.Names[strings.ToLower(primary)]
+	if name == "" {
+		name = p.Names["default"]
+	}
 	return gapi.GeocodeResult{
 		AddressComponents: []gapi.AddressComponent{},
-		FormattedAddress:  p.Names["default"] + ", " + formatAddress(p.Address),
+		FormattedAddress:  name + ", " + formatAddress(p.Address),
 		Geometry: gapi.GeocodeGeometry{
 			Location:     gapi.GeoLatLng{Lat: p.Lat, Lng: p.Lon},
 			LocationType: "GEOMETRIC_CENTER",

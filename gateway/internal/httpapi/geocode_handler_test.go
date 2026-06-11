@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/danielnanuk/open-map-service/gateway/internal/geocode"
@@ -26,6 +27,7 @@ func (f *fakeGeocoder) Search(_ context.Context, q, lang string, limit int) ([]g
 	return f.searchRes, f.err
 }
 func (f *fakeGeocoder) Reverse(_ context.Context, lat, lon float64, lang string) (*geocode.NominatimResult, error) {
+	f.gotLang = lang
 	return f.reverseRes, f.err
 }
 
@@ -130,7 +132,7 @@ func TestReverseGeocodeCombinesAddressAndPOIs(t *testing.T) {
 		Lon: 104.916, Lat: 11.5621,
 	}}}
 	h := NewWithGeocoder(&fakeSearcher{}, st, g)
-	_, body := geocodeGET(t, h, "?latlng=11.5621,104.9160")
+	_, body := geocodeGET(t, h, "?latlng=11.5621,104.9160&language=km")
 	if body["status"] != "OK" {
 		t.Fatalf("%v", body)
 	}
@@ -143,6 +145,9 @@ func TestReverseGeocodeCombinesAddressAndPOIs(t *testing.T) {
 	}
 	if results[1].(map[string]any)["place_id"] != "p9" {
 		t.Fatalf("poi second: %v", results[1])
+	}
+	if g.gotLang != "km" {
+		t.Fatalf("language not propagated to reverse: %q", g.gotLang)
 	}
 }
 
@@ -161,5 +166,21 @@ func TestReverseGeocodeOceanIsZeroResults(t *testing.T) {
 	_, body := geocodeGET(t, h, "?latlng=10.0,103.0")
 	if body["status"] != "ZERO_RESULTS" {
 		t.Fatalf("%v", body)
+	}
+}
+
+func TestReverseGeocodeLocalizesPOIName(t *testing.T) {
+	nm := nmResult()
+	g := &fakeGeocoder{reverseRes: &nm}
+	st := &fakeNearbyStore{nearby: []store.PlaceRow{{
+		PlaceID: "p9", Names: map[string]string{"default": "Brown Coffee", "km": "កាហ្វេ"},
+		Categories: []string{"cafe"}, Address: map[string]string{"locality": "Phnom Penh"},
+		Lon: 104.916, Lat: 11.5621,
+	}}}
+	h := NewWithGeocoder(&fakeSearcher{}, st, g)
+	_, body := geocodeGET(t, h, "?latlng=11.5621,104.9160&language=km")
+	poi := body["results"].([]any)[1].(map[string]any)
+	if !strings.Contains(poi["formatted_address"].(string), "កាហ្វេ") {
+		t.Fatalf("want km POI name: %v", poi)
 	}
 }
