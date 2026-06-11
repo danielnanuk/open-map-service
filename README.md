@@ -164,6 +164,76 @@ M5 选择**全量周更**:每次管道下载完整 PBF 并由 `mediagis/nominati
 过滤掉 `/metrics`、`/healthz`、`_unmatched`（路由未命中路径），避免低流量或健康检查
 流量导致噪音误报；分母同时用 `clamp_min(..., 0.001)` 防除零。
 
+## 备份与恢复
+
+### 脚本用法
+
+```bash
+# 备份(pg_dump -Fc + OpenSearch 文件系统快照 + 图构件 tar)
+bash scripts/backup.sh
+# → backups/<ts>/places.dump  (Postgres,~87 MB)
+# → backups/<ts>/os_snapshot_name
+# → backups/<ts>/graphs.tar.gz (OSRM+Valhalla 图构件,~689 MB)
+
+# 恢复
+bash scripts/restore.sh backups/<ts>
+```
+
+### Cron 示例
+
+```cron
+# 每日 01:30 备份(约 2 分钟)
+30 1 * * *  cd /home/daniel/places && bash scripts/backup.sh >> logs/backup.log 2>&1
+```
+
+### 对象存储上传(可选)
+
+备份完成后将目录同步到远端:
+
+```bash
+# rclone(任意 S3/GCS/B2 兼容)
+rclone copy backups/<ts> remote:places-backup/<ts>
+
+# AWS CLI
+aws s3 cp --recursive backups/<ts> s3://my-bucket/places-backup/<ts>
+```
+
+`backups/` 已加入 `.gitignore`。
+
+### 首次部署:注册快照仓库
+
+OpenSearch 快照仓库需一次性注册(compose 已挂 ossnapshots 卷并设 path.repo):
+
+```bash
+curl -s -X PUT 'localhost:9200/_snapshot/local' -H 'Content-Type: application/json' \
+  -d '{"type":"fs","settings":{"location":"/snapshots"}}'
+```
+
+### 演练记录(2026-06-11)
+
+**备份大小:**
+- `places.dump` (Postgres pg_dump -Fc): 87 MB
+- `graphs.tar.gz` (OSRM×3 + Valhalla 瓦片): 689 MB
+- `os_snapshot_name` (OpenSearch 快照名引用): <1 KB
+- OpenSearch 快照数据保存在 Docker volume `ossnapshots`
+
+**破坏操作:**
+```
+DROP TABLE places CASCADE  → PostgreSQL: relation "places" does not exist ✓
+DELETE places-* indices    → OpenSearch: index_not_found_exception ✓
+```
+
+**恢复耗时:** ~43 秒(主要为 graphs.tar.gz 解包;pg + OS 各约 5-10 秒)
+
+**验证结果:**
+- PostgreSQL: `SELECT count(*) FROM places` → **108373** ✓
+- OpenSearch: `GET /places/_count` → **108373** ✓
+- `make golden`: **18/18 PASS** ✓
+- `make test-go`: **全部通过** ✓
+
+**注:** Valhalla 图瓦片由 root 用户(容器内)写入,tar 解压需 sudo 权限;
+脚本已处理(`sudo tar ... || echo "skipped"`)。pg 与 OS 是关键数据路径,图构件在磁盘完整时跳过覆盖无影响。
+
 ## Matrix 基准(2026-06-11,8C/32GB 单机)
 
 - 500×500(25 万元素,OSRM):car 3.74s / moto 4.25s / tuktuk 4.42s(验收线 <10s,均 PASS)

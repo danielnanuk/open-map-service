@@ -20,8 +20,11 @@ services:
       discovery.type: single-node
       DISABLE_SECURITY_PLUGIN: "true"
       OPENSEARCH_JAVA_OPTS: "-Xms1g -Xmx1g"
+      path.repo: /snapshots
     ports: ["127.0.0.1:9200:9200"]
-    volumes: [osdata:/usr/share/opensearch/data]
+    volumes:
+      - osdata:/usr/share/opensearch/data
+      - ossnapshots:/snapshots
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
@@ -126,5 +129,6 @@ services:
 volumes:
   pgdata:
   osdata:
+  ossnapshots:
   nominatim-data:
   prometheus-data:
