@@ -71,6 +71,7 @@ services:
       VALHALLA_URL: http://valhalla:8002
     ports: ["8080:8080"]
     depends_on:
+      # nominatim 故意不在列:geocode 可降级回退 OpenSearch(M2 实测);valhalla 无回退,需 healthy
       postgis: {condition: service_healthy}
       opensearch: {condition: service_healthy}
       valhalla: {condition: service_healthy}
