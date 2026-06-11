@@ -14,6 +14,9 @@ make up-all        # 启动 gateway
 make golden        # 黄金查询集验收
 ```
 
+首次启动 Nominatim 会执行一次性导入(柬埔寨 ~5-15 分钟,`docker logs places-nominatim-1` 看进度,
+就绪标志 `curl localhost:8081/status`)。
+
 生产机前置要求:OpenSearch 需要 `vm.max_map_count ≥ 262144`:
 `sudo sysctl -w vm.max_map_count=262144`(写入 /etc/sysctl.d/ 持久化)。
 
@@ -24,6 +27,11 @@ curl -s -X POST localhost:8080/v1/places:searchText \
   -H 'Content-Type: application/json' \
   -H 'X-Goog-FieldMask: places.id,places.displayName,places.formattedAddress' \
   -d '{"textQuery":"អង្គរវត្ត","languageCode":"km"}'
+
+# 正向地理编码(地址→坐标)
+curl -s 'localhost:8080/maps/api/geocode/json?address=Street+271,+Phnom+Penh&language=km'
+# 逆向(坐标→地址+附近 POI)
+curl -s 'localhost:8080/maps/api/geocode/json?latlng=11.5621,104.9160'
 ```
 
 ## 测试
@@ -52,3 +60,6 @@ curl -s -X POST localhost:8080/v1/places:searchText \
 - 罗马音检索仅覆盖主名本身为拉丁字的地点(柬埔寨商户多数如此);纯高棉文名的
   Khmer→Latin 转写 ICU 不支持,M2 计划引入别名表/ETL 期转写
 - 鉴权/配额在 M5 落地,当前无鉴权
+- geocode 结果中来自 Nominatim 的 `place_id` 形如 `nominatim:way:123`,不能用于
+  `/v1/places/{id}` 详情(两套数据域);OpenSearch 来源的结果可以
+- legacy Geocoding 形态没有 attribution 字段;数据署名义务由本 README 许可说明承担

@@ -33,3 +33,23 @@
     locationRestriction: {circle: {center: {latitude: 11.5621, longitude: 104.9160}, radius: 2000}}
     includedTypes: ["restaurant"]
   expect_min_results: 3
+- name: geocode_street_en
+  endpoint: geocode
+  params: {address: "Street 271, Phnom Penh"}
+  expect_status: OK
+  expect_any: ["271", "ផ្លូវ"]
+- name: geocode_admin_khmer
+  endpoint: geocode
+  params: {address: "ខេត្តសៀមរាប"}
+  expect_status: OK
+  expect_any: ["Siem Reap", "សៀមរាប"]
+- name: geocode_poi_routes_to_search
+  endpoint: geocode
+  params: {address: "Angkor Wat"}
+  expect_status: OK
+  expect_any: ["Angkor", "អង្គរ"]
+- name: reverse_pp_riverside
+  endpoint: geocode
+  params: {latlng: "11.5621,104.9160"}
+  expect_status: OK
+  expect_any: ["Phnom Penh", "ភ្នំពេញ", "ផ្សារ"]
