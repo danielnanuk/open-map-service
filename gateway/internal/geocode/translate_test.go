@@ -66,6 +66,28 @@ func TestNominatimBadCoordsSurface(t *testing.T) {
 	}
 }
 
+func TestNominatimProvinceKeyMapsToAdmin1(t *testing.T) {
+	// 实测:西哈努克等省 Nominatim 返回 province 键而非 state
+	n := NominatimResult{Lat: "10.6", Lon: "103.5",
+		Address: map[string]string{"province": "ខេត្តព្រះសីហនុ", "country": "Cambodia", "country_code": "kh"}}
+	g, err := NominatimToGeocodeResult(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Types[0] != "administrative_area_level_1" {
+		t.Fatalf("types: %v", g.Types)
+	}
+	found := false
+	for _, c := range g.AddressComponents {
+		if c.Types[0] == "administrative_area_level_1" && c.LongName == "ខេត្តព្រះសីហនុ" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("province component missing: %+v", g.AddressComponents)
+	}
+}
+
 func TestDocToGeocodeResult(t *testing.T) {
 	d := search.Doc{PlaceID: "p1", NameDefault: "Angkor Wat",
 		FormattedAddress: "Siem Reap, Cambodia", Categories: []string{"tourist_attraction"}}

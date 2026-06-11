@@ -23,6 +23,7 @@ var componentTypes = []struct {
 	{"town", []string{"locality", "political"}},
 	{"city", []string{"locality", "political"}},
 	{"county", []string{"administrative_area_level_2", "political"}},
+	{"province", []string{"administrative_area_level_1", "political"}},
 	{"state", []string{"administrative_area_level_1", "political"}},
 	{"postcode", []string{"postal_code"}},
 	{"country", []string{"country", "political"}},
@@ -54,7 +55,7 @@ func NominatimToGeocodeResult(n NominatimResult) (gapi.GeocodeResult, error) {
 		locType, rtypes = "GEOMETRIC_CENTER", []string{"route"}
 	case n.Address["city"] != "" || n.Address["town"] != "" || n.Address["village"] != "":
 		rtypes = []string{"locality", "political"}
-	case n.Address["state"] != "":
+	case n.Address["state"] != "" || n.Address["province"] != "":
 		rtypes = []string{"administrative_area_level_1", "political"}
 	}
 	return gapi.GeocodeResult{
