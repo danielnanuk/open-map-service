@@ -75,3 +75,17 @@ func TestOSRMMatrixAdapter(t *testing.T) { // MatrixRouter 适配:忽略 costing
 		t.Fatalf("%v %v", durs, err)
 	}
 }
+
+func TestOSRMTableDimMismatchIsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 2 sources 请求,但只回 1 行
+		w.Write([]byte(`{"code":"Ok","durations":[[0,1]],"distances":[[0,1]]}`))
+	}))
+	defer srv.Close()
+	c := NewOSRM(srv.URL)
+	if _, _, err := c.Table(context.Background(),
+		[]Location{{Lat: 1, Lon: 2}, {Lat: 3, Lon: 4}},
+		[]Location{{Lat: 5, Lon: 6}, {Lat: 7, Lon: 8}}); err == nil {
+		t.Fatal("want shape error")
+	}
+}

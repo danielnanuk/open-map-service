@@ -68,6 +68,17 @@ func (o *OSRM) Table(ctx context.Context, sources, targets []Location) ([][]*flo
 	if parsed.Code != "Ok" {
 		return nil, nil, fmt.Errorf("osrm %s: %s", parsed.Code, parsed.Message)
 	}
+	// 形状契约在客户端边界强制:畸形响应变成干净错误,而不是 handler 越界 panic
+	for name, m := range map[string][][]*float64{"durations": parsed.Durations, "distances": parsed.Distances} {
+		if len(m) != len(sources) {
+			return nil, nil, fmt.Errorf("osrm %s: %d rows for %d sources", name, len(m), len(sources))
+		}
+		for i, row := range m {
+			if len(row) != len(targets) {
+				return nil, nil, fmt.Errorf("osrm %s row %d: %d cols for %d targets", name, i, len(row), len(targets))
+			}
+		}
+	}
 	return parsed.Durations, parsed.Distances, nil
 }
 
