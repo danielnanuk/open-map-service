@@ -72,6 +72,7 @@ func (h *Handlers) forwardGeocode(w http.ResponseWriter, r *http.Request, addres
 			return
 		}
 		for _, n := range res {
+			// 坏坐标的单条结果静默跳过(translation 失败不计入 errCount):宁可少一条也不整批失败
 			if g, err := geocode.NominatimToGeocodeResult(n); err == nil {
 				results = append(results, g)
 			}
@@ -85,7 +86,7 @@ func (h *Handlers) forwardGeocode(w http.ResponseWriter, r *http.Request, addres
 			return
 		}
 		for _, d := range docs {
-			results = append(results, geocode.DocToGeocodeResult(d))
+			results = append(results, geocode.DocToGeocodeResult(d, lang))
 		}
 	}
 

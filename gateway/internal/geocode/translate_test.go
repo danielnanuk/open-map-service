@@ -92,7 +92,7 @@ func TestDocToGeocodeResult(t *testing.T) {
 	d := search.Doc{PlaceID: "p1", NameDefault: "Angkor Wat",
 		FormattedAddress: "Siem Reap, Cambodia", Categories: []string{"tourist_attraction"}}
 	d.Location.Lat, d.Location.Lon = 13.4125, 103.867
-	g := DocToGeocodeResult(d)
+	g := DocToGeocodeResult(d, "")
 	if g.PlaceID != "p1" || g.Geometry.Location.Lat != 13.4125 {
 		t.Fatalf("%+v", g)
 	}
@@ -101,5 +101,15 @@ func TestDocToGeocodeResult(t *testing.T) {
 	}
 	if g.Geometry.LocationType != "GEOMETRIC_CENTER" || g.Types[0] != "tourist_attraction" {
 		t.Fatalf("%+v", g)
+	}
+}
+
+func TestDocToGeocodeResultLocalized(t *testing.T) {
+	d := search.Doc{PlaceID: "p1", NameDefault: "Angkor Wat", NameZh: "吴哥窟",
+		FormattedAddress: "Siem Reap, Cambodia"}
+	d.Location.Lat, d.Location.Lon = 13.4125, 103.867
+	g := DocToGeocodeResult(d, "zh-CN")
+	if g.FormattedAddress != "吴哥窟, Siem Reap, Cambodia" {
+		t.Fatalf("localized formatted: %s", g.FormattedAddress)
 	}
 }

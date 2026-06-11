@@ -46,22 +46,7 @@ func geoFromBias(b *gapi.Bias) *search.Geo {
 
 // chooseName 按 languageCode 选展示名,缺失回退 default。
 func chooseName(d search.Doc, lang string) string {
-	primary, _, _ := strings.Cut(lang, "-") // BCP-47: zh-CN → zh
-	switch strings.ToLower(primary) {
-	case "km":
-		if d.NameKm != "" {
-			return d.NameKm
-		}
-	case "zh":
-		if d.NameZh != "" {
-			return d.NameZh
-		}
-	case "en":
-		if d.NameEn != "" {
-			return d.NameEn
-		}
-	}
-	return d.NameDefault
+	return d.LocalizedName(lang)
 }
 
 func docToPlace(d search.Doc, lang string) gapi.Place {

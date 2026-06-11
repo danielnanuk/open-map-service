@@ -70,10 +70,10 @@ func NominatimToGeocodeResult(n NominatimResult) (gapi.GeocodeResult, error) {
 	}, nil
 }
 
-func DocToGeocodeResult(d search.Doc) gapi.GeocodeResult {
+func DocToGeocodeResult(d search.Doc, lang string) gapi.GeocodeResult {
 	return gapi.GeocodeResult{
 		AddressComponents: []gapi.AddressComponent{},
-		FormattedAddress:  d.NameDefault + ", " + d.FormattedAddress,
+		FormattedAddress:  d.LocalizedName(lang) + ", " + d.FormattedAddress,
 		Geometry: gapi.GeocodeGeometry{
 			Location:     gapi.GeoLatLng{Lat: d.Location.Lat, Lng: d.Location.Lon},
 			LocationType: "GEOMETRIC_CENTER",

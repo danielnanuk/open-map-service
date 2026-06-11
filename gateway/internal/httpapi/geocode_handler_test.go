@@ -16,10 +16,12 @@ type fakeGeocoder struct {
 	reverseRes *geocode.NominatimResult
 	err        error
 	searchHits int
+	gotLang    string
 }
 
 func (f *fakeGeocoder) Search(_ context.Context, q, lang string, limit int) ([]geocode.NominatimResult, error) {
 	f.searchHits++
+	f.gotLang = lang
 	return f.searchRes, f.err
 }
 func (f *fakeGeocoder) Reverse(_ context.Context, lat, lon float64, lang string) (*geocode.NominatimResult, error) {
@@ -45,7 +47,7 @@ func geocodeGET(t *testing.T, h *Handlers, query string) (int, map[string]any) {
 func TestGeocodeAddressPrefersNominatim(t *testing.T) {
 	g := &fakeGeocoder{searchRes: []geocode.NominatimResult{nmResult()}}
 	h := NewWithGeocoder(&fakeSearcher{}, nil, g)
-	code, body := geocodeGET(t, h, "?address=Street+271+Phnom+Penh")
+	code, body := geocodeGET(t, h, "?address=Street+271+Phnom+Penh&language=km")
 	if code != 200 || body["status"] != "OK" {
 		t.Fatalf("%d %v", code, body)
 	}
@@ -56,6 +58,9 @@ func TestGeocodeAddressPrefersNominatim(t *testing.T) {
 	loc := r0["geometry"].(map[string]any)["location"].(map[string]any)
 	if loc["lat"] != 11.5 || loc["lng"] != 104.9 { // legacy 键名!
 		t.Fatalf("location keys: %v", loc)
+	}
+	if g.gotLang != "km" {
+		t.Fatalf("language not propagated to nominatim: %q", g.gotLang)
 	}
 }
 
