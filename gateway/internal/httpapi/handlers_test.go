@@ -184,6 +184,10 @@ func (f *fakeStore) GetPlace(_ context.Context, id string) (*store.PlaceRow, err
 	return nil, nil
 }
 
+func (f *fakeStore) GetNearbyPlaces(context.Context, float64, float64, float64, int) ([]store.PlaceRow, error) {
+	return nil, nil
+}
+
 func TestGetPlaceDetails(t *testing.T) {
 	row := &store.PlaceRow{
 		PlaceID:      "p1",

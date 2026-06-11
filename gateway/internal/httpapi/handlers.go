@@ -19,6 +19,7 @@ type Searcher interface {
 
 type PlaceStore interface {
 	GetPlace(ctx context.Context, id string) (*store.PlaceRow, error)
+	GetNearbyPlaces(ctx context.Context, lat, lon, radiusM float64, limit int) ([]store.PlaceRow, error)
 }
 
 // dataAttributions 满足 ODbL/CDLA 的署名义务(spec §11),静态附于每个 Place。

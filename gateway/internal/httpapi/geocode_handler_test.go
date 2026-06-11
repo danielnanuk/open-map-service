@@ -9,6 +9,7 @@ import (
 
 	"github.com/danielnanuk/open-map-service/gateway/internal/geocode"
 	"github.com/danielnanuk/open-map-service/gateway/internal/search"
+	"github.com/danielnanuk/open-map-service/gateway/internal/store"
 )
 
 type fakeGeocoder struct {
@@ -108,5 +109,57 @@ func TestGeocodeMissingParams(t *testing.T) {
 	code, body := geocodeGET(t, h, "")
 	if code != 200 || body["status"] != "INVALID_REQUEST" {
 		t.Fatalf("%d %v", code, body)
+	}
+}
+
+type fakeNearbyStore struct {
+	fakeStore
+	nearby []store.PlaceRow
+}
+
+func (f *fakeNearbyStore) GetNearbyPlaces(_ context.Context, lat, lon, radiusM float64, limit int) ([]store.PlaceRow, error) {
+	return f.nearby, nil
+}
+
+func TestReverseGeocodeCombinesAddressAndPOIs(t *testing.T) {
+	nm := nmResult()
+	g := &fakeGeocoder{reverseRes: &nm}
+	st := &fakeNearbyStore{nearby: []store.PlaceRow{{
+		PlaceID: "p9", Names: map[string]string{"default": "Brown Coffee"},
+		Categories: []string{"cafe"}, Address: map[string]string{"locality": "Phnom Penh"},
+		Lon: 104.916, Lat: 11.5621,
+	}}}
+	h := NewWithGeocoder(&fakeSearcher{}, st, g)
+	_, body := geocodeGET(t, h, "?latlng=11.5621,104.9160")
+	if body["status"] != "OK" {
+		t.Fatalf("%v", body)
+	}
+	results := body["results"].([]any)
+	if len(results) != 2 { // 地址结果 + 1 个 POI
+		t.Fatalf("want 2 results, got %d", len(results))
+	}
+	if results[0].(map[string]any)["place_id"] != "nominatim:way:9" {
+		t.Fatalf("address first: %v", results[0])
+	}
+	if results[1].(map[string]any)["place_id"] != "p9" {
+		t.Fatalf("poi second: %v", results[1])
+	}
+}
+
+func TestReverseGeocodeBadLatlng(t *testing.T) {
+	h := NewWithGeocoder(&fakeSearcher{}, &fakeNearbyStore{}, &fakeGeocoder{})
+	for _, bad := range []string{"garbage", "1,2,3", "91.0,104.9", "11.5,191.0"} {
+		_, body := geocodeGET(t, h, "?latlng="+bad)
+		if body["status"] != "INVALID_REQUEST" {
+			t.Fatalf("latlng=%q: %v", bad, body)
+		}
+	}
+}
+
+func TestReverseGeocodeOceanIsZeroResults(t *testing.T) {
+	h := NewWithGeocoder(&fakeSearcher{}, &fakeNearbyStore{}, &fakeGeocoder{}) // reverseRes nil, nearby 空
+	_, body := geocodeGET(t, h, "?latlng=10.0,103.0")
+	if body["status"] != "ZERO_RESULTS" {
+		t.Fatalf("%v", body)
 	}
 }

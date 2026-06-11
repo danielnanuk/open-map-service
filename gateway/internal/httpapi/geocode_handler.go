@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/danielnanuk/open-map-service/gateway/internal/gapi"
 	"github.com/danielnanuk/open-map-service/gateway/internal/geocode"
+	"github.com/danielnanuk/open-map-service/gateway/internal/store"
 )
 
 type Geocoder interface {
@@ -53,9 +56,53 @@ func (h *Handlers) Geocode(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// reverseGeocode 在 T7 实现;占位对 latlng 请求返回 INVALID_REQUEST(T7 替换并带测试)。
+const (
+	reversePOIRadiusM = 150
+	reversePOILimit   = 4
+)
+
 func (h *Handlers) reverseGeocode(w http.ResponseWriter, r *http.Request, latlng, lang string) {
-	writeGeocode(w, nil, "INVALID_REQUEST")
+	parts := strings.Split(latlng, ",")
+	if len(parts) != 2 {
+		writeGeocode(w, nil, "INVALID_REQUEST")
+		return
+	}
+	lat, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	lon, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err1 != nil || err2 != nil || lat < -90 || lat > 90 || lon < -180 || lon > 180 {
+		writeGeocode(w, nil, "INVALID_REQUEST")
+		return
+	}
+	ctx := r.Context()
+	var results []gapi.GeocodeResult
+	if n, err := h.geocoder.Reverse(ctx, lat, lon, lang); err != nil {
+		log.Printf("reverse nominatim: %v", err)
+	} else if n != nil {
+		if g, err := geocode.NominatimToGeocodeResult(*n); err == nil {
+			results = append(results, g)
+		}
+	}
+	if rows, err := h.store.GetNearbyPlaces(ctx, lat, lon, reversePOIRadiusM, reversePOILimit); err != nil {
+		log.Printf("reverse nearby: %v", err)
+	} else {
+		for _, p := range rows {
+			results = append(results, placeRowToGeocodeResult(p))
+		}
+	}
+	writeGeocode(w, results, "")
+}
+
+func placeRowToGeocodeResult(p store.PlaceRow) gapi.GeocodeResult {
+	return gapi.GeocodeResult{
+		AddressComponents: []gapi.AddressComponent{},
+		FormattedAddress:  p.Names["default"] + ", " + formatAddress(p.Address),
+		Geometry: gapi.GeocodeGeometry{
+			Location:     gapi.GeoLatLng{Lat: p.Lat, Lng: p.Lon},
+			LocationType: "GEOMETRIC_CENTER",
+		},
+		PlaceID: p.PlaceID,
+		Types:   p.Categories,
+	}
 }
 
 func (h *Handlers) forwardGeocode(w http.ResponseWriter, r *http.Request, address, lang string) {
