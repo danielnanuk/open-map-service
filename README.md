@@ -246,3 +246,73 @@ DELETE places-* indices    → OpenSearch: index_not_found_exception ✓
 - 阈值:>2,500 元素走 OSRM;≤2,500 走 Valhalla(单次上限 50×50,超出自动分块)
 - 降级:OSRM 故障自动回退 Valhalla 分块(网关日志 "falling back");500×500 兜底
   外推约 ~100 秒(串行分块,并发优化记 M5)
+
+## 压测数字(§14.5,2026-06-11,8C/32GB 单机)
+
+`python3 scripts/load_test.py`(20 并发 × 1000 请求,8 个混合语言 searchText 轮转):
+
+| 指标 | 值 |
+|------|----|
+| QPS | **304** |
+| P50 | **47 ms** |
+| P95 | **131 ms** |
+| P99 | **605 ms** |
+| errors | 0 |
+
+**单节点余量判断(spec §14.5):** 304 QPS @ P95 131ms,单机 8C/32GB 有较大余量。
+P99 605ms 因 OpenSearch 偶发 GC/flush 抖动,不影响中位数体验。
+推荐生产限流 200 QPS/key(rpm_limit=12000),留 50% 余量给路由与矩阵流量。
+
+## 运维手册(生产部署 Checklist)
+
+### 部署前
+
+1. **强口令** — 复制 `.env.example` 为 `.env`，设置 `POSTGRES_PASSWORD` 与 `NOMINATIM_PASSWORD` 为随机强口令（`openssl rand -hex 24`）。
+2. **鉴权开启** — 设置 `AUTH_ENABLED=true`；用 `make gen-api-key NAME=<client>` 发放 key。
+3. **内核参数** — `sysctl -w vm.max_map_count=262144`（OpenSearch 必须）并写入 `/etc/sysctl.d/99-places.conf` 持久化。
+4. **首次快照仓库注册**（新机器 ossnapshots 卷由 root 初始化，需先修正属主）：
+   ```bash
+   docker exec --user root places-opensearch-1 chown opensearch:opensearch /snapshots
+   curl -s -X PUT 'localhost:9200/_snapshot/local' \
+     -H 'Content-Type: application/json' \
+     -d '{"type":"fs","settings":{"location":"/snapshots"}}'
+   ```
+
+### Cron 两条
+
+```cron
+# 数据更新(每周日 02:00,约 20-40 分钟)
+0 2 * * 0  cd /home/daniel/places && bash scripts/update_pipeline.sh >> logs/update.log 2>&1
+
+# 备份(每日 01:30,约 2 分钟;保留最新 7 份)
+30 1 * * *  cd /home/daniel/places && bash scripts/backup.sh >> logs/backup.log 2>&1
+```
+
+### 对象存储同步
+
+备份完成后将 `backups/<ts>/` 同步到远端（参见备份章节）。
+
+### WriteTimeout 120s 上限说明
+
+`http.Server.WriteTimeout` 设为 120s。降级路径上 >500×500 的 Valhalla 兜底约 ~400s（串行分块）
+会被该超时掐断，客户端收到连接重置。**建议矩阵请求 ≤500/side**；超过 500 的兜底请求须知：
+Valhalla 串行分块路径在单机上不在 SLA 内，响应会被截断。
+
+### 15s 优雅退出 drain 说明
+
+`Shutdown(ctx)` 设 15s drain 窗口。**部署窗口注意**：正在处理的 in-flight 长请求（矩阵/路由）
+若超过 15s 将被截断。建议在低流量窗口滚动重启，或在重启前通过负载均衡将流量切走。
+
+## M6 候选清单
+
+以下改进项已在 M5 终审确认在外，记录为 M6 候选（README 注明，不影响 M5 验收）：
+
+| 候选项 | 背景 | spec 引用 |
+|--------|------|-----------|
+| **类目映射调优** | ABA Bank 等 OSM `amenity=bank` 映射到 `point_of_interest`（占比 72%），搜索质量可通过细粒度类目树改善 | §14.1 |
+| **纯高棉文罗马音别名表** | 柬埔寨地名纯高棉文与罗马音映射不完整，导致英文查询部分遗漏；需构建别名索引 | §14.4 |
+| **OSRM/Valhalla 速度模型校准** | 速度档位阈值不连续（moto/tuktuk 切换点有跳变），需与实际道路数据对齐 | M4 终审注 |
+| **Valhalla 分块并发化** | 当前降级路径串行分块（500×500 兜底约 ~100s），并发化可降至 ~15s | M4/M5 注 |
+| **km/zh 导航 locale** | 路线导航 `language` 参数支持 `km`（高棉）与 `zh`（中文），需 Valhalla locale 文件 | M4 终审注 |
+| **maneuvers 暴露** | `/directions` 端点已有路线数据，转弯指令（maneuvers）尚未在响应中暴露 | M4 终审注 |
+| **Alertmanager 通知接入** | 告警规则已就位，M5 仅交付规则；通知渠道（PagerDuty/Slack/Email）接入 Alertmanager | §9 |

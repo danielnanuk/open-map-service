@@ -36,7 +36,11 @@ func TestRequestIDPassthrough(t *testing.T) {
 	})
 	req := httptest.NewRequest("GET", "/x", nil)
 	req.Header.Set("X-Request-Id", "client-supplied")
-	WithRequestID(inner).ServeHTTP(httptest.NewRecorder(), req)
+	rec := httptest.NewRecorder()
+	WithRequestID(inner).ServeHTTP(rec, req)
+	if rec.Header().Get("X-Request-Id") != "client-supplied" {
+		t.Fatal("client id must echo in response header")
+	}
 }
 
 func TestAuthDisabledPassesThrough(t *testing.T) {
