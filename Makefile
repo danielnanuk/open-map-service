@@ -11,7 +11,7 @@ help:
 
 .PHONY: up down
 up:
-	docker compose up -d --build postgis opensearch
+	docker compose up -d --build postgis opensearch nominatim
 	docker compose ps
 
 down:
