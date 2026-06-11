@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielnanuk/open-map-service/gateway/internal/geocode"
 	"github.com/danielnanuk/open-map-service/gateway/internal/httpapi"
+	"github.com/danielnanuk/open-map-service/gateway/internal/route"
 	"github.com/danielnanuk/open-map-service/gateway/internal/search"
 	"github.com/danielnanuk/open-map-service/gateway/internal/store"
 )
@@ -23,13 +24,15 @@ func main() {
 	osURL := env("OPENSEARCH_URL", "http://localhost:9200")
 	dsn := env("DATABASE_URL", "postgresql://places:places@localhost:5432/places")
 	nmURL := env("NOMINATIM_URL", "http://localhost:8081")
+	vhURL := env("VALHALLA_URL", "http://localhost:8002")
 	port := env("PORT", "8080")
 
 	pg, err := store.NewPG(context.Background(), dsn)
 	if err != nil {
 		log.Fatalf("postgres: %v", err)
 	}
-	h := httpapi.NewWithGeocoder(search.New(osURL), pg, geocode.NewNominatim(nmURL))
+	h := httpapi.NewWithGeocoder(search.New(osURL), pg, geocode.NewNominatim(nmURL)).
+		WithRouter(route.New(vhURL))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/places:searchText", h.SearchText)
@@ -37,6 +40,7 @@ func main() {
 	mux.HandleFunc("POST /v1/places:autocomplete", h.Autocomplete)
 	mux.HandleFunc("GET /v1/places/{id}", h.GetPlace)
 	mux.HandleFunc("GET /maps/api/geocode/json", h.Geocode)
+	mux.HandleFunc("POST /directions/v2:computeRoutes", h.ComputeRoutes)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))

@@ -32,6 +32,7 @@ type Handlers struct {
 	searcher Searcher
 	store    PlaceStore
 	geocoder Geocoder
+	router   Router
 }
 
 func New(s Searcher, ps PlaceStore) *Handlers {
