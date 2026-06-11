@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/update_pipeline.sh — 数据更新蓝绿管道(spec §9)
-# 顺序:OSM 刷新 → ETL 链(含漂移闸)→ 索引 alias 切换 → OSRM 三图重建+滚动替换 → Valhalla 重建
+# 顺序:OSM 刷新 → ETL 链(含漂移闸)→ 索引 alias 切换 → OSRM 停机重建再启 → Valhalla 重建
 #
 # cron 示例(每周日 02:00):
 #   0 2 * * 0 cd /home/daniel/places && bash scripts/update_pipeline.sh >> logs/update.log 2>&1
@@ -47,7 +47,7 @@ echo "  ETL elapsed: $(($(date +%s)-START))s"
 echo "== [4/6] 漂移闸(±15%)=="
 AFTER=$(docker exec places-postgis-1 psql -U places -d places -t -A \
     -c "SELECT count(*) FROM places")
-python3 -c "
+etl/.venv/bin/python -c "
 b, a = $BEFORE, $AFTER
 drift = abs(a - b) / max(b, 1)
 print(f'places: {b} -> {a} (drift {drift:.1%})')
@@ -60,18 +60,15 @@ START=$(date +%s)
 make etl-index
 echo "  index elapsed: $(($(date +%s)-START))s"
 
-echo "== [6/6] 路由图重建 + 滚动替换 =="
-echo "  注:OSRM restart 窗口内 matrix 请求自动降级 Valhalla——属预期行为"
+echo "== [6/6] 路由图重建(先停后建再启)=="
+echo "  注:OSRM 停机窗口内 matrix 请求自动降级 Valhalla——属预期行为"
 START=$(date +%s)
-# OSRM 三图重建(写入 data/osrm/*;在线实例继续 mmap 旧文件)
+# ⚠️ 必须先停:osrm-extract 以 O_TRUNC 原地覆写 .osrm(同 inode),
+# 在线实例 mmap 同一文件会读到损坏数据直接 SIGSEGV(M5 评审现场复现,exit 139)
+docker compose stop osrm-car osrm-moto osrm-tuktuk
 make osrm-build
 echo "  osrm-build elapsed: $(($(date +%s)-START))s"
-
-# 滚动重启三个 OSRM 容器(逐个重启,降低同时不可用窗口)
-for svc in osrm-car osrm-moto osrm-tuktuk; do
-    echo "  restarting $svc ..."
-    docker compose restart "$svc"
-done
+docker compose start osrm-car osrm-moto osrm-tuktuk
 
 # Valhalla 重建:清旧瓦片,拷入新 PBF,重启后自动重建
 START_V=$(date +%s)

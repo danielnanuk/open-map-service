@@ -68,8 +68,8 @@ def prune_old_indices(base_url: str, keep: set[str]) -> list[str]:
     for row in resp.json():
         idx = row["index"]
         if idx not in keep:
-            requests.delete(f"{base_url}/{idx}", timeout=_TIMEOUT)
-            deleted.append(idx)
+            if requests.delete(f"{base_url}/{idx}", timeout=_TIMEOUT).ok:
+                deleted.append(idx)
     return deleted
 
 

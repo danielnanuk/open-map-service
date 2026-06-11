@@ -102,9 +102,10 @@ make update-all   # 等价于 bash scripts/update_pipeline.sh
 3. ETL 链:overture-download → osm-extract → load → conflate
 4. 漂移闸:行数变化 >±15% 则中止,防数据质量事故
 5. OpenSearch 索引重建 + alias 原子切换(蓝绿无停机)
-6. OSRM 三图重建 + 逐个滚动重启;Valhalla 清瓦片重建
+6. OSRM 先停后重建再启(osrm-extract 会原地覆写在线 mmap 的图文件,
+   带电重建会让运行实例 SIGSEGV——实测教训);Valhalla 清瓦片重建
 
-OSRM restart 窗口内 matrix 请求会自动降级 Valhalla——属预期行为。
+OSRM 停机窗口内 matrix 请求会自动降级 Valhalla——属预期行为。
 
 ### Cron 示例
 
