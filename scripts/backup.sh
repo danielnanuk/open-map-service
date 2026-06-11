@@ -19,5 +19,16 @@ echo "== route graphs =="
 tar -czf "$DIR/graphs.tar.gz" data/osrm data/valhalla 2>/dev/null || true
 
 du -sh "$DIR"/*
+
+# 保留最新 KEEP 份(本地 + OS 快照同步清理):每份 ~800MB,无清理 14 天打满磁盘(M5 事故教训)
+KEEP=7
+for old in $(ls -1dt backups/*/ 2>/dev/null | tail -n +$((KEEP+1))); do
+  if [ -f "$old/os_snapshot_name" ]; then
+    curl -s -X DELETE "localhost:9200/_snapshot/local/$(cat "$old/os_snapshot_name")" >/dev/null || true
+  fi
+  rm -rf "$old"
+  echo "pruned: $old"
+done
+
 echo "DONE → $DIR"
 echo "(生产:rclone copy $DIR remote:places-backup/$TS  或  aws s3 cp --recursive $DIR s3://my-bucket/places-backup/$TS)"

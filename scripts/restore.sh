@@ -11,6 +11,13 @@ docker exec -i places-postgis-1 pg_restore -U places -d places --clean --if-exis
 
 echo "== opensearch restore =="
 SNAP=$(cat "$DIR/os_snapshot_name")
+# 删索引前先验证快照可用——快照坏了还删索引 = 自断后路
+SNAP_STATE=$(curl -sf "localhost:9200/_snapshot/local/$SNAP" | \
+  python3 -c "import sys,json; print(json.load(sys.stdin)['snapshots'][0]['state'])" 2>/dev/null || echo UNKNOWN)
+if [ "$SNAP_STATE" != "SUCCESS" ]; then
+  echo "ERROR: snapshot $SNAP state=$SNAP_STATE — aborting (existing indices untouched)" >&2
+  exit 1
+fi
 # 关闭现有 places-* 索引再恢复(快照含 alias)
 for idx in $(curl -s 'localhost:9200/_cat/indices/places-*?h=index'); do
   curl -s -X DELETE "localhost:9200/$idx" >/dev/null

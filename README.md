@@ -182,9 +182,13 @@ bash scripts/restore.sh backups/<ts>
 ### Cron 示例
 
 ```cron
-# 每日 01:30 备份(约 2 分钟)
+# 每日 01:30 备份(约 2 分钟;脚本自动保留最新 7 份并同步清理对应 OS 快照)
 30 1 * * *  cd /home/daniel/places && bash scripts/backup.sh >> logs/backup.log 2>&1
 ```
+
+注:pg_dump 与 OpenSearch 快照非同一时刻(秒级偏差);低负载窗口运行时实际一致,
+高并发写入场景如需严格一致需停写后备份。restore.sh 覆盖图构件需要 sudo
+(cron 场景需配置 NOPASSWD,或接受跳过图恢复——pg/OS 数据不受影响)。
 
 ### 对象存储上传(可选)
 
@@ -202,9 +206,11 @@ aws s3 cp --recursive backups/<ts> s3://my-bucket/places-backup/<ts>
 
 ### 首次部署:注册快照仓库
 
-OpenSearch 快照仓库需一次性注册(compose 已挂 ossnapshots 卷并设 path.repo):
+OpenSearch 快照仓库需一次性注册(compose 已挂 ossnapshots 卷并设 path.repo)。
+新机器上卷由 root 初始化,先修正属主再注册:
 
 ```bash
+docker exec --user root places-opensearch-1 chown opensearch:opensearch /snapshots
 curl -s -X PUT 'localhost:9200/_snapshot/local' -H 'Content-Type: application/json' \
   -d '{"type":"fs","settings":{"location":"/snapshots"}}'
 ```
