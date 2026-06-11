@@ -153,7 +153,7 @@ func TestReverseGeocodeCombinesAddressAndPOIs(t *testing.T) {
 
 func TestReverseGeocodeBadLatlng(t *testing.T) {
 	h := NewWithGeocoder(&fakeSearcher{}, &fakeNearbyStore{}, &fakeGeocoder{})
-	for _, bad := range []string{"garbage", "1,2,3", "91.0,104.9", "11.5,191.0"} {
+	for _, bad := range []string{"garbage", "1,2,3", "91.0,104.9", "11.5,191.0", "NaN,104.9", "11.5,NaN"} {
 		_, body := geocodeGET(t, h, "?latlng="+bad)
 		if body["status"] != "INVALID_REQUEST" {
 			t.Fatalf("latlng=%q: %v", bad, body)

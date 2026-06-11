@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -69,7 +70,8 @@ func (h *Handlers) reverseGeocode(w http.ResponseWriter, r *http.Request, latlng
 	}
 	lat, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
 	lon, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
-	if err1 != nil || err2 != nil || lat < -90 || lat > 90 || lon < -180 || lon > 180 {
+	if err1 != nil || err2 != nil || math.IsNaN(lat) || math.IsNaN(lon) ||
+		lat < -90 || lat > 90 || lon < -180 || lon > 180 {
 		writeGeocode(w, nil, "INVALID_REQUEST")
 		return
 	}

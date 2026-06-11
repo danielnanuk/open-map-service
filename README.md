@@ -6,7 +6,7 @@
 ## M1 快速开始
 
 ```bash
-make up            # postgis + opensearch
+make up            # postgis + opensearch + nominatim
 make migrate       # 建表
 make py-setup      # python venv
 make etl-all       # overture 下载→转换→osm 抽取→入库→conflation→索引(首次约 10-30 分钟)

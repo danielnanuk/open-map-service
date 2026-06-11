@@ -20,7 +20,7 @@ def run_case(case: dict) -> tuple[bool, str]:
     if case.get("expect_status") and body.get("status") != case["expect_status"]:
         return False, f"status={body.get('status')} want {case['expect_status']}"
     if "expect_min_results" in case:
-        n = len(body.get("places") or body.get("suggestions") or [])
+        n = len(body.get("places") or body.get("suggestions") or body.get("results") or [])
         return n >= case["expect_min_results"], f"results={n} (min {case['expect_min_results']})"
     blob = json.dumps(body, ensure_ascii=False)
     hit = next((e for e in case["expect_any"] if e in blob), None)
