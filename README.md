@@ -83,3 +83,11 @@ curl -s -X POST localhost:8080/distanceMatrix/v2:computeRouteMatrix -H 'Content-
 - computeRouteMatrix 一次性返回完整 JSON 数组(Google 为流式),且元素上限远超
   Google(625):单侧 ≤1000(100 万元素);>2,500 元素走 OSRM,小矩阵走 Valhalla,
   OSRM 故障自动降级 Valhalla 分块(变慢但可用)
+
+## Matrix 基准(2026-06-11,8C/32GB 单机)
+
+- 500×500(25 万元素,OSRM):car 3.74s / moto 4.25s / tuktuk 4.42s(验收线 <10s,均 PASS)
+- 60×60 经 OSRM:0.29s;经 Valhalla 降级(osrm-car 停机实测):5.29s——变慢但可用
+- 阈值:>2,500 元素走 OSRM;≤2,500 走 Valhalla(单次上限 50×50,超出自动分块)
+- 降级:OSRM 故障自动回退 Valhalla 分块(网关日志 "falling back");500×500 兜底
+  外推约 ~100 秒(串行分块,并发优化记 M5)
