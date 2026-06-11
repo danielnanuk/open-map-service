@@ -30,6 +30,7 @@ var dataAttributions = []gapi.Attribution{
 type Handlers struct {
 	searcher Searcher
 	store    PlaceStore
+	geocoder Geocoder
 }
 
 func New(s Searcher, ps PlaceStore) *Handlers {
