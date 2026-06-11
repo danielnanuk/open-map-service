@@ -12,6 +12,7 @@ import (
 
 	"github.com/danielnanuk/open-map-service/gateway/internal/gapi"
 	"github.com/danielnanuk/open-map-service/gateway/internal/geocode"
+	"github.com/danielnanuk/open-map-service/gateway/internal/metrics"
 	"github.com/danielnanuk/open-map-service/gateway/internal/store"
 )
 
@@ -38,6 +39,9 @@ func writeGeocode(w http.ResponseWriter, results []gapi.GeocodeResult, status st
 		if len(results) == 0 {
 			status = "ZERO_RESULTS"
 		}
+	}
+	if status == "ZERO_RESULTS" {
+		metrics.ZeroResults.WithLabelValues("/maps/api/geocode/json").Inc()
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -79,6 +83,7 @@ func (h *Handlers) reverseGeocode(w http.ResponseWriter, r *http.Request, latlng
 	var results []gapi.GeocodeResult
 	if n, err := h.geocoder.Reverse(ctx, lat, lon, lang); err != nil {
 		log.Printf("reverse nominatim: %v", err)
+		metrics.BackendErrors.WithLabelValues("nominatim").Inc()
 	} else if n != nil {
 		if g, err := geocode.NominatimToGeocodeResult(*n); err == nil {
 			results = append(results, g)
@@ -86,6 +91,7 @@ func (h *Handlers) reverseGeocode(w http.ResponseWriter, r *http.Request, latlng
 	}
 	if rows, err := h.store.GetNearbyPlaces(ctx, lat, lon, reversePOIRadiusM, reversePOILimit); err != nil {
 		log.Printf("reverse nearby: %v", err)
+		metrics.BackendErrors.WithLabelValues("postgis").Inc()
 	} else {
 		for _, p := range rows {
 			results = append(results, placeRowToGeocodeResult(p, lang))
@@ -124,6 +130,7 @@ func (h *Handlers) forwardGeocode(w http.ResponseWriter, r *http.Request, addres
 		res, err := h.geocoder.Search(ctx, address, lang, geocodeLimit)
 		if err != nil {
 			log.Printf("geocode nominatim: %v", err)
+			metrics.BackendErrors.WithLabelValues("nominatim").Inc()
 			errCount++
 			return
 		}
@@ -138,6 +145,7 @@ func (h *Handlers) forwardGeocode(w http.ResponseWriter, r *http.Request, addres
 		docs, err := h.searcher.SearchText(ctx, address, nil, geocodeLimit)
 		if err != nil {
 			log.Printf("geocode opensearch: %v", err)
+			metrics.BackendErrors.WithLabelValues("opensearch").Inc()
 			errCount++
 			return
 		}

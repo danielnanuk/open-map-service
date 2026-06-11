@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/danielnanuk/open-map-service/gateway/internal/gapi"
+	"github.com/danielnanuk/open-map-service/gateway/internal/metrics"
 	"github.com/danielnanuk/open-map-service/gateway/internal/search"
 	"github.com/danielnanuk/open-map-service/gateway/internal/store"
 )
@@ -88,6 +89,9 @@ func (h *Handlers) SearchText(w http.ResponseWriter, r *http.Request) {
 		internal(w, err)
 		return
 	}
+	if len(docs) == 0 {
+		metrics.ZeroResults.WithLabelValues(r.URL.Path).Inc()
+	}
 	writeJSON(w, r, http.StatusOK, docsToPlacesResponse(docs, req.LanguageCode))
 }
 
@@ -143,6 +147,9 @@ func (h *Handlers) SearchNearby(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		internal(w, err)
 		return
+	}
+	if len(docs) == 0 {
+		metrics.ZeroResults.WithLabelValues(r.URL.Path).Inc()
 	}
 	writeJSON(w, r, http.StatusOK, docsToPlacesResponse(docs, req.LanguageCode))
 }

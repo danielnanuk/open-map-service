@@ -15,6 +15,7 @@ import (
 	"github.com/danielnanuk/open-map-service/gateway/internal/route"
 	"github.com/danielnanuk/open-map-service/gateway/internal/search"
 	"github.com/danielnanuk/open-map-service/gateway/internal/store"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func env(key, def string) string {
@@ -57,10 +58,11 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
+	mux.Handle("GET /metrics", promhttp.Handler())
 
 	authEnabled := env("AUTH_ENABLED", "false") == "true"
 	keyStore := auth.NewStore(pg, time.Minute)
-	handler := httpapi.WithRequestID(httpapi.WithAuth(authEnabled, keyStore)(mux))
+	handler := httpapi.WithRequestID(httpapi.WithMetrics(httpapi.WithAuth(authEnabled, keyStore)(mux)))
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           handler,

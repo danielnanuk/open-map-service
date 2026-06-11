@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"github.com/danielnanuk/open-map-service/gateway/internal/gapi"
+	"github.com/danielnanuk/open-map-service/gateway/internal/metrics"
 	"github.com/danielnanuk/open-map-service/gateway/internal/route"
 )
 
@@ -87,6 +88,7 @@ func (h *Handlers) ComputeRouteMatrix(w http.ResponseWriter, r *http.Request) {
 		durs, dists, err = inst.Matrix(r.Context(), origins, dests, costing, opts)
 		if err != nil {
 			log.Printf("matrix osrm failed, falling back to valhalla: %v", err)
+			metrics.BackendErrors.WithLabelValues("osrm").Inc()
 			durs, dists, err = h.matrixFallback.Matrix(r.Context(), origins, dests, costing, opts)
 		}
 	} else {

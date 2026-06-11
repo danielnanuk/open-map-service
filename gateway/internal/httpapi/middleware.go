@@ -6,8 +6,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/danielnanuk/open-map-service/gateway/internal/auth"
+	"github.com/danielnanuk/open-map-service/gateway/internal/metrics"
 )
 
 type ctxKey int
@@ -31,6 +35,36 @@ func WithRequestID(next http.Handler) http.Handler {
 		w.Header().Set("X-Request-Id", id)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKeyRequestID, id)))
 	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+// WithMetrics 记录每请求计数与延迟(path 用路由模式名,避免高基数:取 r.URL.Path 的前两段)。
+func WithMetrics(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := &statusRecorder{ResponseWriter: w, status: 200}
+		start := time.Now()
+		next.ServeHTTP(rec, r)
+		path := metricPath(r.URL.Path)
+		metrics.RequestsTotal.WithLabelValues(path, strconv.Itoa(rec.status)).Inc()
+		metrics.RequestDuration.WithLabelValues(path).Observe(time.Since(start).Seconds())
+	})
+}
+
+// metricPath 压低基数:/v1/places/{id} → /v1/places/_id,其余取原路径(端点都是固定字面量)。
+func metricPath(p string) string {
+	if strings.HasPrefix(p, "/v1/places/") && !strings.Contains(p[len("/v1/places/"):], ":") {
+		return "/v1/places/_id"
+	}
+	return p
 }
 
 // Checker 是 auth.Store 的接口(便于测试注入 fake)。

@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielnanuk/open-map-service/gateway/internal/fieldmask"
 	"github.com/danielnanuk/open-map-service/gateway/internal/gapi"
+	"github.com/danielnanuk/open-map-service/gateway/internal/metrics"
 )
 
 func writeJSON(w http.ResponseWriter, r *http.Request, status int, payload any) {
@@ -35,5 +36,6 @@ func invalidArgument(w http.ResponseWriter, msg string) {
 
 func internal(w http.ResponseWriter, err error) {
 	log.Printf("internal error: %v", err)
+	metrics.BackendErrors.WithLabelValues("internal").Inc()
 	writeError(w, http.StatusInternalServerError, "INTERNAL", "Internal error encountered.")
 }
