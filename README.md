@@ -72,5 +72,6 @@ curl -s -X POST localhost:8080/directions/v2:computeRoutes -H 'Content-Type: app
 - Directions 为静态 ETA(无实时路况);`vehicleProfile:"tuktuk"` 为协议扩展
   (motor_scooter + top_speed 40 + use_highways 0.1,定参见 scripts/tuktuk_calibration.sh)
 - polyline 为 Google 标准 precision 1e-5(已从 Valhalla 1e-6 转码)
-- 导航指令文案:Valhalla 3.7 无 km/zh locale——动词回退英文,但高棉文路名
-  (OSM name:km)正常呈现;zh 完全回退英文
+- computeRoutes 响应暂不含逐向指令(maneuvers);languageCode 已透传 Valhalla 备用。
+  后续暴露指令时的现状:Valhalla 3.7 无 km/zh locale——动词回退英文,
+  高棉文路名(OSM name:km)正常呈现;zh 完全回退英文
