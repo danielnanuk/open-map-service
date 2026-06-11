@@ -1,0 +1,42 @@
+{
+  "settings": {
+    "index": {"number_of_shards": 1, "number_of_replicas": 0},
+    "analysis": {
+      "filter": {
+        "ac_edge": {"type": "edge_ngram", "min_gram": 1, "max_gram": 20},
+        "to_latin": {"type": "icu_transform", "id": "Any-Latin; NFD; [:Nonspacing Mark:] Remove; NFC; Lower"}
+      },
+      "analyzer": {
+        "icu_text": {"type": "custom", "tokenizer": "icu_tokenizer", "filter": ["icu_folding"]},
+        "icu_ac":   {"type": "custom", "tokenizer": "icu_tokenizer", "filter": ["icu_folding", "ac_edge"]},
+        "latn_text":{"type": "custom", "tokenizer": "icu_tokenizer", "filter": ["to_latin"]},
+        "latn_ac":  {"type": "custom", "tokenizer": "icu_tokenizer", "filter": ["to_latin", "ac_edge"]},
+        "zh_text":  {"type": "custom", "tokenizer": "smartcn_tokenizer", "filter": ["lowercase"]},
+        "zh_ac":    {"type": "custom", "tokenizer": "smartcn_tokenizer", "filter": ["lowercase", "ac_edge"]}
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "place_id":  {"type": "keyword"},
+      "name_default": {"type": "text", "analyzer": "icu_text",
+        "fields": {
+          "ac":      {"type": "text", "analyzer": "icu_ac",  "search_analyzer": "icu_text"},
+          "latn":    {"type": "text", "analyzer": "latn_text"},
+          "latn_ac": {"type": "text", "analyzer": "latn_ac", "search_analyzer": "latn_text"}}},
+      "name_en": {"type": "text", "analyzer": "icu_text",
+        "fields": {"ac": {"type": "text", "analyzer": "icu_ac", "search_analyzer": "icu_text"}}},
+      "name_km": {"type": "text", "analyzer": "icu_text",
+        "fields": {
+          "ac":      {"type": "text", "analyzer": "icu_ac",  "search_analyzer": "icu_text"},
+          "latn":    {"type": "text", "analyzer": "latn_text"},
+          "latn_ac": {"type": "text", "analyzer": "latn_ac", "search_analyzer": "latn_text"}}},
+      "name_zh": {"type": "text", "analyzer": "zh_text",
+        "fields": {"ac": {"type": "text", "analyzer": "zh_ac", "search_analyzer": "zh_text"}}},
+      "formatted_address": {"type": "text", "analyzer": "icu_text"},
+      "categories": {"type": "keyword"},
+      "confidence": {"type": "float"},
+      "location":   {"type": "geo_point"}
+    }
+  }
+}

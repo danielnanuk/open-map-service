@@ -1,0 +1,27 @@
+[project]
+name = "omsetl"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "duckdb>=1.2,<2",
+  "pyarrow>=19",
+  "psycopg[binary]>=3.2",
+  "osmium>=4.0",
+  "shapely>=2.0",
+  "overturemaps>=1.0",
+  "requests>=2.32",
+  "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+markers = ["integration: needs docker compose services"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["etl"]

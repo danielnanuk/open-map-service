@@ -1,0 +1,44 @@
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: places
+      POSTGRES_PASSWORD: places
+      POSTGRES_DB: places
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U places -d places"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+
+  opensearch:
+    build: deploy/opensearch
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms1g -Xmx1g"
+    ports: ["127.0.0.1:9200:9200"]
+    volumes: [osdata:/usr/share/opensearch/data]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  gateway:
+    build: gateway
+    environment:
+      DATABASE_URL: postgresql://places:places@postgis:5432/places
+      OPENSEARCH_URL: http://opensearch:9200
+    ports: ["8080:8080"]
+    depends_on:
+      postgis: {condition: service_healthy}
+      opensearch: {condition: service_healthy}
+
+volumes:
+  pgdata:
+  osdata:

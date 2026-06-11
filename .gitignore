@@ -1,0 +1,13 @@
+data/*
+!data/.gitkeep
+*.parquet
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+gateway/gateway
+*.osm.pbf
+.env
+.env.local
+etl/build/
+*.egg-info/
