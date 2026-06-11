@@ -96,7 +96,8 @@ url = os.environ['OPENSEARCH_URL']; \
 conn = psycopg.connect(os.environ['DATABASE_URL']); \
 name = create_index(url); \
 print('indexed:', bulk_index(url, name, rows_from_postgis(conn))); \
-swap_alias(url, name); print('alias ->', name)"
+prev = swap_alias(url, name); print('alias ->', name); \
+print('pruned:', prune_old_indices(url, {name, *prev[:1]}))"
 
 etl-all: etl-overture etl-osm etl-load etl-conflate etl-index
 

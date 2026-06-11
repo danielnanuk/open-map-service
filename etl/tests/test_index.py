@@ -86,3 +86,17 @@ def test_rows_formatted_address_no_country_duplication():
             assert row["formatted_address"] == "Cambodia"   # 不是 "Cambodia, Cambodia"
         finally:
             ac_conn.execute("DELETE FROM places WHERE place_id = 'idx-test-addr'")
+
+def test_prune_old_indices_keeps_specified(managed_indexes):
+    existing = {r["index"] for r in requests.get(
+        f"{OS}/_cat/indices/{ALIAS}-*?h=index&format=json", timeout=10).json()}
+    a = create_index(OS)
+    managed_indexes.append(a)
+    b = create_index(OS)
+    managed_indexes.append(b)
+    from etl.index import prune_old_indices
+    deleted = prune_old_indices(OS, existing | {b})  # 只允许删 a
+    assert a in deleted and b not in deleted
+    left = {r["index"] for r in requests.get(
+        f"{OS}/_cat/indices/{ALIAS}-*?h=index&format=json", timeout=10).json()}
+    assert a not in left and b in left and existing <= left

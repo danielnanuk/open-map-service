@@ -45,14 +45,32 @@ def _flush(base_url: str, buf: list[str]) -> int:
     return n
 
 
-def swap_alias(base_url: str, new_index: str) -> None:
+def swap_alias(base_url: str, new_index: str) -> list[str]:
+    """原子切换 alias,返回先前的目标索引列表(供调用方决定保留/清理)。"""
     requests.post(f"{base_url}/{new_index}/_refresh", timeout=_TIMEOUT).raise_for_status()
     current = requests.get(f"{base_url}/_alias/{ALIAS}", timeout=_TIMEOUT)
+    prev: list[str] = []
     actions = [{"add": {"index": new_index, "alias": ALIAS}}]
     if current.status_code == 200:
-        actions = [{"remove": {"index": old, "alias": ALIAS}} for old in current.json()
-                   if old != new_index] + actions
+        prev = [old for old in current.json() if old != new_index]
+        actions = [{"remove": {"index": old, "alias": ALIAS}} for old in prev] + actions
     requests.post(f"{base_url}/_aliases", json={"actions": actions}, timeout=_TIMEOUT).raise_for_status()
+    return prev
+
+
+def prune_old_indices(base_url: str, keep: set[str]) -> list[str]:
+    """删除 keep 之外的 {ALIAS}-* 索引(每次重建泄漏一个旧索引,M5 磁盘事故的教训)。
+    只应由 etl-index 生产路径调用——测试的 swap 不得触发删除。返回删除列表。"""
+    resp = requests.get(f"{base_url}/_cat/indices/{ALIAS}-*?h=index&format=json", timeout=_TIMEOUT)
+    if resp.status_code != 200:
+        return []
+    deleted = []
+    for row in resp.json():
+        idx = row["index"]
+        if idx not in keep:
+            requests.delete(f"{base_url}/{idx}", timeout=_TIMEOUT)
+            deleted.append(idx)
+    return deleted
 
 
 def rows_from_postgis(conn: psycopg.Connection) -> Iterator[dict]:
