@@ -4,7 +4,7 @@ export OPENSEARCH_URL ?= http://localhost:9200
 PY := etl/.venv/bin/python
 PIP := etl/.venv/bin/pip
 PYTEST := etl/.venv/bin/pytest
-OSRM_IMG ?= ghcr.io/project-osrm/osrm-backend:latest
+OSRM_IMG ?= ghcr.io/project-osrm/osrm-backend@sha256:7e2d775e5dd1f6752f679621e79dcff3b6bc37266733c771a360af9b3d652205
 OSRM_PROFILES := car moto tuktuk
 
 .PHONY: help
@@ -107,6 +107,10 @@ gen-api-key:
 	docker exec -i places-postgis-1 psql -U places -d places \
 	  -v key="$$KEY" -v name="$(or $(NAME),default)" >/dev/null && \
 	echo "API key: $$KEY"
+
+.PHONY: update-all
+update-all:
+	bash scripts/update_pipeline.sh
 
 .PHONY: test-go up-all golden
 test-go:

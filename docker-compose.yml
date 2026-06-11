@@ -30,7 +30,7 @@ services:
       start_period: 60s
 
   nominatim:
-    image: mediagis/nominatim:5.1
+    image: mediagis/nominatim@sha256:e07824605225985e74433e5b3d5e07b077e3aec868e48af18a7ee79025475db7
     environment:
       PBF_PATH: /pbf/cambodia-latest.osm.pbf
       NOMINATIM_PASSWORD: ${NOMINATIM_PASSWORD:-nominatim_places}
@@ -47,7 +47,7 @@ services:
       start_period: 300s
 
   valhalla:
-    image: ghcr.io/valhalla/valhalla-scripted:latest
+    image: ghcr.io/valhalla/valhalla-scripted@sha256:bb3e89c0e8d3fb35e9278e23a1f7fdbcbf76d29c1edbf7effad829e1ee26b6ed
     ports: ["127.0.0.1:8002:8002"]
     volumes:
       - ./data/valhalla:/custom_files
@@ -81,7 +81,7 @@ services:
       valhalla: {condition: service_healthy}
 
   osrm-car:
-    image: ghcr.io/project-osrm/osrm-backend:latest
+    image: ghcr.io/project-osrm/osrm-backend@sha256:7e2d775e5dd1f6752f679621e79dcff3b6bc37266733c771a360af9b3d652205
     command: osrm-routed --algorithm mld --max-table-size 2000 /data/cambodia-latest.osrm
     volumes: ["./data/osrm/car:/data"]
     ports: ["127.0.0.1:5000:5000"]
@@ -93,7 +93,7 @@ services:
       start_period: 20s
 
   osrm-moto:
-    image: ghcr.io/project-osrm/osrm-backend:latest
+    image: ghcr.io/project-osrm/osrm-backend@sha256:7e2d775e5dd1f6752f679621e79dcff3b6bc37266733c771a360af9b3d652205
     command: osrm-routed --algorithm mld --max-table-size 2000 /data/cambodia-latest.osrm
     volumes: ["./data/osrm/moto:/data"]
     ports: ["127.0.0.1:5001:5000"]
@@ -105,7 +105,7 @@ services:
       start_period: 20s
 
   osrm-tuktuk:
-    image: ghcr.io/project-osrm/osrm-backend:latest
+    image: ghcr.io/project-osrm/osrm-backend@sha256:7e2d775e5dd1f6752f679621e79dcff3b6bc37266733c771a360af9b3d652205
     command: osrm-routed --algorithm mld --max-table-size 2000 /data/cambodia-latest.osrm
     volumes: ["./data/osrm/tuktuk:/data"]
     ports: ["127.0.0.1:5002:5000"]
@@ -117,7 +117,7 @@ services:
       start_period: 20s
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus@sha256:69f5241418838263316593f7274a304b095c40bcf22e57272865da91bd60a8ac
     volumes:
       - ./deploy/prometheus:/etc/prometheus:ro
       - prometheus-data:/prometheus

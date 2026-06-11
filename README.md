@@ -87,6 +87,48 @@ curl -s -X POST localhost:8080/distanceMatrix/v2:computeRouteMatrix -H 'Content-
   时长约为 OSRM 自由流的 ~2 倍;distance 两侧一致)——跨阈值对比时长需留意,
   速度模型校准记 M5
 
+## 数据更新管道
+
+### 一键更新
+
+```bash
+make update-all   # 等价于 bash scripts/update_pipeline.sh
+```
+
+管道按序执行六步:
+
+1. 刷新 OSM PBF(Geofabrik 柬埔寨每日更新)
+2. 记录 Postgres 基线计数
+3. ETL 链:overture-download → osm-extract → load → conflate
+4. 漂移闸:行数变化 >±15% 则中止,防数据质量事故
+5. OpenSearch 索引重建 + alias 原子切换(蓝绿无停机)
+6. OSRM 三图重建 + 逐个滚动重启;Valhalla 清瓦片重建
+
+OSRM restart 窗口内 matrix 请求会自动降级 Valhalla——属预期行为。
+
+### Cron 示例
+
+```cron
+# 每周日 02:00 全量更新(柬埔寨 ~20-40 分钟)
+0 2 * * 0  cd /home/daniel/places && bash scripts/update_pipeline.sh >> logs/update.log 2>&1
+```
+
+### 漂移闸说明
+
+步骤 4 对比 ETL 前后的 `places` 表行数。若变化幅度超过 ±15%,脚本以非零状态退出,
+终止后续索引与图重建——防止上游数据源异常(bbox 变化/schema 漂移)静默污染生产索引。
+正常 OSM 日更导致的微小变化(通常 <1%)可通过闸门。
+
+### Nominatim 增量复制取舍
+
+M5 选择**全量周更**:每次管道下载完整 PBF 并由 `mediagis/nominatim` 镜像一次性重导。
+优点:管道无状态、回滚只需换 PBF、单节点柬埔寨导入耗时可接受(<15 分钟)。
+
+如需**增量复制**(实时跟 OSM 变化),可在 `docker-compose.yml` 中为 `nominatim` 服务
+添加 `REPLICATION_URL=https://download.geofabrik.de/asia/cambodia-updates/` 及
+`NOMINATIM_REPLICATION_*` 相关 env,并启动常驻 `nominatim-update` 容器。
+适合高更新频率场景,但会引入持久状态,M5 不默认开启。
+
 ## 监控
 
 ### 指标
