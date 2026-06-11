@@ -172,3 +172,16 @@ func TestMatrixFieldMaskDoesNotBreakArray(t *testing.T) {
 		t.Fatalf("array response broken under mask: %v %s", err, rec.Body.String())
 	}
 }
+
+func TestMatrixExactThresholdGoesToValhalla(t *testing.T) {
+	vh, osrm := &fakeMatrix{}, &fakeMatrix{}
+	h := NewWithGeocoder(&fakeSearcher{}, nil, &fakeGeocoder{}).
+		WithMatrix(map[string]MatrixRouter{"auto": osrm}, vh)
+	code, arr, _ := matrixPOST(t, h, matrixBody(50, 50, "DRIVE", "")) // =2500,非 >
+	if code != 200 || len(arr) != 2500 {
+		t.Fatalf("code=%d len=%d", code, len(arr))
+	}
+	if vh.hits != 1 || osrm.hits != 0 {
+		t.Fatalf("2500 must stay valhalla: vh=%d osrm=%d", vh.hits, osrm.hits)
+	}
+}
