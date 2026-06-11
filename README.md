@@ -69,7 +69,8 @@ curl -s -X POST localhost:8080/distanceMatrix/v2:computeRouteMatrix -H 'Content-
 - autocomplete 的 `text` 无 `matches` 高亮偏移
 - 罗马音检索仅覆盖主名本身为拉丁字的地点(柬埔寨商户多数如此);纯高棉文名的
   Khmer→Latin 转写 ICU 不支持,M2 计划引入别名表/ETL 期转写
-- 鉴权/配额在 M5 落地,当前无鉴权
+- 鉴权/配额已实现(API key + 每 key 令牌桶),默认关闭(`AUTH_ENABLED=false`)——
+  生产开启见运维手册;错误体对齐 Google(403 PERMISSION_DENIED / 429 RESOURCE_EXHAUSTED)
 - geocode 结果中来自 Nominatim 的 `place_id` 形如 `nominatim:way:123`,不能用于
   `/v1/places/{id}` 详情(两套数据域);OpenSearch 来源的结果可以
 - legacy Geocoding 形态没有 attribution 字段;数据署名义务由本 README 许可说明承担
@@ -262,6 +263,9 @@ DELETE places-* indices    → OpenSearch: index_not_found_exception ✓
 **单节点余量判断(spec §14.5):** 304 QPS @ P95 131ms,单机 8C/32GB 有较大余量。
 P99 605ms 因 OpenSearch 偶发 GC/flush 抖动,不影响中位数体验。
 推荐生产限流 200 QPS/key(rpm_limit=12000),留 50% 余量给路由与矩阵流量。
+
+注:以上为暖缓存空闲机数字;终审在容器刚重启、缓存未热的并发场景下复测得
+119 QPS / P95 595ms(P50 一致 42ms)——冷启动后给系统 1-2 分钟热身再评估容量。
 
 ## 运维手册(生产部署 Checklist)
 

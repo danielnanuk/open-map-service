@@ -12,3 +12,4 @@ gateway/gateway
 .env.local
 etl/build/
 *.egg-info/
+logs/
