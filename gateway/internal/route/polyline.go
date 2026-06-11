@@ -9,7 +9,7 @@ import (
 func decodeValue(encoded string, i int) (int64, int) {
 	var result int64
 	var shift uint
-	for {
+	for i < len(encoded) { // 截断输入不 panic:返回已解析部分
 		b := int64(encoded[i]) - 63
 		i++
 		result |= (b & 0x1f) << shift

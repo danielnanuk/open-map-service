@@ -42,3 +42,10 @@ func TestPolylineEmptyAndNegative(t *testing.T) {
 		t.Fatalf("negative coords: %v", got)
 	}
 }
+
+func TestDecodeValueTruncated(t *testing.T) {
+	// 截断输入不得 panic:返回部分/空结果即可
+	_ = Polyline6To5("_p~i")      // 截断在首值中段
+	_ = Polyline6To5("_p~iF")     // lat 完整,lon 截断
+	_ = Polyline6To5("_p~iF~ps|") // 两值完整,第三值截断
+}
