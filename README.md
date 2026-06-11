@@ -53,6 +53,7 @@ curl -s -X POST localhost:8080/distanceMatrix/v2:computeRouteMatrix -H 'Content-
 - 端到端:`make golden`
 
 集成测试使用独立 places_test 库与 places_test alias(`make migrate-test` 一次性建库),不影响生产数据。
+直接调 `pytest` 时 conftest 自动注入 places_test;若显式设 `DATABASE_URL=...places` 则会打生产库——勿这么做。
 
 ## 数据基线(2026-06-10)
 
