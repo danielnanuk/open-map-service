@@ -16,7 +16,7 @@ import (
 
 const (
 	matrixThreshold    = 2500 // 50×50:Valhalla 单次位置上限的平方
-	matrixMaxLocations = 1000 // 单侧上限(OSRM sources×destinations ≤ max-table-size² = 4M,4 倍余量)
+	matrixMaxLocations = 1000 // 单侧上限:控制 URL/响应体规模(实测 v26 不强制 max-table-size,此处自限)
 )
 
 type MatrixRouter interface {
