@@ -32,7 +32,7 @@ func TestRouteParsesTrip(t *testing.T) {
 	c := New(srv.URL)
 	trip, err := c.Route(context.Background(),
 		[]Location{{Lat: 11.5564, Lon: 104.9282}, {Lat: 11.5696, Lon: 104.9210}},
-		"auto", nil, "en-US")
+		"auto", map[string]any{"motor_scooter": map[string]any{"top_speed": 40}}, "en-US")
 	if err != nil || trip == nil {
 		t.Fatalf("err=%v trip=%v", err, trip)
 	}
@@ -41,6 +41,10 @@ func TestRouteParsesTrip(t *testing.T) {
 	}
 	if got["costing"] != "auto" || got["units"] != "kilometers" || got["language"] != "en-US" {
 		t.Fatalf("request body: %v", got)
+	}
+	co, ok := got["costing_options"].(map[string]any)
+	if !ok || co["motor_scooter"] == nil {
+		t.Fatalf("costing_options not propagated: %v", got)
 	}
 }
 

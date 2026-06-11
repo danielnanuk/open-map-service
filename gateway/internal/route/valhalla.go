@@ -77,7 +77,9 @@ func (c *Client) Route(ctx context.Context, locs []Location, costing string,
 	var parsed valhallaResponse
 	if resp.StatusCode == http.StatusBadRequest {
 		if json.NewDecoder(resp.Body).Decode(&parsed) == nil && parsed.ErrorCode != 0 {
-			return nil, nil // 业务性无果(如 442 No path):不是基础设施错误
+			// 442 No path / 171 No suitable edges → 业务性无果;1xx(如 120 位置数不足)是调用方错误,
+			// 但 handler 在调用前已校验两点,实践不可达 —— 统一按无果处理
+			return nil, nil
 		}
 		return nil, fmt.Errorf("valhalla status 400")
 	}
@@ -86,6 +88,9 @@ func (c *Client) Route(ctx context.Context, locs []Location, costing string,
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
 		return nil, err
+	}
+	if parsed.Trip.Status != 0 {
+		return nil, fmt.Errorf("valhalla partial route status %d", parsed.Trip.Status)
 	}
 	return &parsed.Trip, nil
 }
