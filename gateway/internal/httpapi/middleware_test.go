@@ -81,7 +81,15 @@ func TestMetricPathCardinality(t *testing.T) {
 	if metricPath("/v1/places/abc-123") != "/v1/places/_id" {
 		t.Fatal("details path must collapse")
 	}
+	if metricPath("/v1/places/osm:node:4293880418") != "/v1/places/_id" {
+		t.Fatal("colon-bearing real place ids must collapse too")
+	}
 	if metricPath("/v1/places:searchText") != "/v1/places:searchText" {
 		t.Fatal("rpc-style path must stay literal")
+	}
+	for _, p := range []string{"/admin/secret", "/etc/passwd", "/random/scanner/path"} {
+		if metricPath(p) != "_unmatched" {
+			t.Fatalf("unknown path %q must fold to _unmatched", p)
+		}
 	}
 }

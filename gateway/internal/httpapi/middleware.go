@@ -37,6 +37,7 @@ func WithRequestID(next http.Handler) http.Handler {
 	})
 }
 
+// statusRecorder 注:未透传 Flusher/Hijacker——当前无流式 handler;若未来加 SSE 需补转发。
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
@@ -59,12 +60,19 @@ func WithMetrics(next http.Handler) http.Handler {
 	})
 }
 
-// metricPath 压低基数:/v1/places/{id} → /v1/places/_id,其余取原路径(端点都是固定字面量)。
+// metricPath 压低基数:details 折叠为 _id(真实 place_id 含冒号,如 osm:node:N),
+// 已注册端点白名单原样保留,其余一律 _unmatched(扫描器/任意 404 不得制造新 label)。
 func metricPath(p string) string {
-	if strings.HasPrefix(p, "/v1/places/") && !strings.Contains(p[len("/v1/places/"):], ":") {
+	if strings.HasPrefix(p, "/v1/places/") {
 		return "/v1/places/_id"
 	}
-	return p
+	switch p {
+	case "/v1/places:searchText", "/v1/places:searchNearby", "/v1/places:autocomplete",
+		"/maps/api/geocode/json", "/directions/v2:computeRoutes",
+		"/distanceMatrix/v2:computeRouteMatrix", "/healthz", "/metrics":
+		return p
+	}
+	return "_unmatched"
 }
 
 // Checker 是 auth.Store 的接口(便于测试注入 fake)。
