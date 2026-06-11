@@ -83,3 +83,17 @@ func TestValhallaMatrixUnreachableCell(t *testing.T) {
 		t.Fatalf("unreachable should be nil: %v %v", durs, err)
 	}
 }
+
+func TestValhallaMatrix50x50ExactBoundary(t *testing.T) {
+	hits := 0
+	srv := fakeMatrixServer(t, &hits)
+	defer srv.Close()
+	c := New(srv.URL)
+	durs, _, err := c.Matrix(context.Background(), matLocs(50, 11.5), matLocs(50, 11.6), "auto", nil)
+	if err != nil || hits != 1 {
+		t.Fatalf("50×50 should be exactly 1 call: err=%v hits=%d", err, hits)
+	}
+	if len(durs) != 50 || len(durs[0]) != 50 {
+		t.Fatalf("shape: %dx%d", len(durs), len(durs[0]))
+	}
+}
