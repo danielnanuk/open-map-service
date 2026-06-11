@@ -5,6 +5,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/danielnanuk/open-map-service/gateway/internal/geocode"
 	"github.com/danielnanuk/open-map-service/gateway/internal/httpapi"
@@ -54,7 +57,28 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 
-	log.Printf("gateway listening on :%s", port)
-	// TODO(M5): 换成 http.Server{ReadHeaderTimeout,...} + SIGTERM 优雅退出(生产加固里程碑)
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+	handler := httpapi.WithRequestID(mux)
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      120 * time.Second, // 大矩阵响应(25 万元素 ~28MB)需要余量
+		IdleTimeout:       60 * time.Second,
+	}
+	go func() {
+		log.Printf("gateway listening on :%s", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %v", err)
+		}
+	}()
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	<-stop
+	log.Print("shutting down...")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("shutdown: %v", err)
+	}
 }
