@@ -1,0 +1,25 @@
+# deploy/k8s/09-jobs.yaml — one-shot Jobs
+# migrate: runs on initial deploy and schema upgrades
+# bootstrap (T3) and golden (T4) Jobs will be appended here in later tasks
+apiVersion: batch/v1
+kind: Job
+metadata: {name: migrate, namespace: places}
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: postgis/postgis:16-3.4
+          command: ["bash", "-c"]
+          args:
+            - for f in /migrations/*.sql; do echo "applying $f";
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -h postgis -U places -d places -v ON_ERROR_STOP=1 -f "$f" || exit 1; done
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: places-secrets, key: POSTGRES_PASSWORD}}
+          volumeMounts: [{name: migrations, mountPath: /migrations}]
+      volumes:
+        - name: migrations
+          configMap: {name: migrations}

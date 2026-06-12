@@ -1,0 +1,42 @@
+# deploy/k8s/02-postgis.yaml
+# storageClassName: local-path (k3d default; EDIT-ME for other clusters)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: postgis, namespace: places}
+spec:
+  serviceName: postgis
+  replicas: 1
+  selector: {matchLabels: {app: postgis}}
+  template:
+    metadata: {labels: {app: postgis}}
+    spec:
+      containers:
+        - name: postgis
+          image: postgis/postgis:16-3.4
+          env:
+            - {name: POSTGRES_USER, value: places}
+            - {name: POSTGRES_DB, value: places}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: places-secrets, key: POSTGRES_PASSWORD}}
+          ports: [{containerPort: 5432}]
+          readinessProbe:
+            exec: {command: ["pg_isready", "-U", "places", "-d", "places"]}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: {memory: 1Gi, cpu: 250m}
+            limits: {memory: 4Gi}
+          volumeMounts: [{name: pgdata, mountPath: /var/lib/postgresql/data}]
+  volumeClaimTemplates:
+    - metadata: {name: pgdata}
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources: {requests: {storage: 5Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: postgis, namespace: places}
+spec:
+  selector: {app: postgis}
+  ports: [{port: 5432}]

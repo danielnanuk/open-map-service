@@ -1,0 +1,54 @@
+# deploy/k8s/03-opensearch.yaml
+# image: EDIT-ME registry prefix for non-k3d clusters
+# storageClassName: local-path (k3d default; EDIT-ME for other clusters)
+# NOTE: compose sets path.repo=/snapshots for local FS snapshot dir + an ossnapshots volume.
+#   In K8s we use repository-s3 for snapshots instead of local FS, so path.repo and
+#   the snapshot volume mount are intentionally omitted here (divergence from compose).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: opensearch, namespace: places}
+spec:
+  serviceName: opensearch
+  replicas: 1
+  selector: {matchLabels: {app: opensearch}}
+  template:
+    metadata: {labels: {app: opensearch}}
+    spec:
+      initContainers:
+        - name: fix-permissions
+          image: busybox
+          command: ["sh", "-c", "chown -R 1000:1000 /usr/share/opensearch/data"]
+          volumeMounts: [{name: osdata, mountPath: /usr/share/opensearch/data}]
+          securityContext: {runAsUser: 0}
+      containers:
+        - name: opensearch
+          image: k3d-places-reg:5500/places/opensearch:m6
+          env:
+            - {name: discovery.type, value: single-node}
+            - {name: DISABLE_SECURITY_PLUGIN, value: "true"}
+            - {name: OPENSEARCH_JAVA_OPTS, value: "-Xms1g -Xmx1g"}
+            # path.repo omitted: K8s uses repository-s3 (not local FS snapshots)
+          ports: [{containerPort: 9200}]
+          readinessProbe:
+            httpGet: {path: /_cluster/health, port: 9200}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            # requests lowered to 1Gi (from 2Gi) to fit ~3GB free host RAM on this dev node;
+            # limits remain 3Gi so the pod can use more if memory becomes available
+            requests: {memory: 1Gi, cpu: 500m}
+            limits: {memory: 3Gi}
+          volumeMounts: [{name: osdata, mountPath: /usr/share/opensearch/data}]
+  volumeClaimTemplates:
+    - metadata: {name: osdata}
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources: {requests: {storage: 5Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: opensearch, namespace: places}
+spec:
+  selector: {app: opensearch}
+  ports: [{port: 9200}]
