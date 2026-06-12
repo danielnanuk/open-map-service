@@ -12,7 +12,7 @@
 | 集群 | 用户已有 K8s 集群(集群相关值参数化,本地 k3d 全程验证后交付) |
 | 打包 | **原生 YAML**(不引入 Helm/Kustomize);集群相关值集中在文件顶部 `# EDIT-ME` 注释块 |
 | 数据交付 | **方案 A:数据即镜像**(OSRM×3、Valhalla);**唯一例外:Nominatim 走 initContainer+S3 tar**(其数据是导入后的 PG 数据目录,kaniko 无法在构建期跑 import)——用户已明示认可 |
-| 更新编排 | 集群内 CronJob(builder Pod 内嵌 kaniko executor) |
+| 更新编排 | 集群内 CronJob(builder Pod 编排;镜像构建由 builder 创建的独立 kaniko Job 完成——kaniko 构建时改写自身 rootfs,不能作子进程内嵌,构建上下文经 S3 预签名 URL 传递) |
 | 基础设施现状 | 集群已有可推 registry 与 S3 兼容存储(manifests 只填地址);监控接集群已有 Prometheus 栈 |
 | 规模 | 单节点起步,各引擎可随时 `replicas` 扩;gateway 上 HPA |
 
@@ -58,7 +58,7 @@ deploy/docker/
 1. 拉新 OSM PBF + Overture(venv 内 CLI,M5 修复的解析方式)→ ETL 链写 PostGIS(Service DNS)
 2. **漂移闸 ±15%**:不过 → exit 1(CronJob 失败由集群既有 kube 告警捕获),不触发后续
 3. etl-index:新索引 + alias 原子切换 + prune 旧索引(M5 既有逻辑)
-4. kaniko(builder 内子进程)顺序构建 3×OSRM + 1×Valhalla 数据镜像并推 registry
+4. builder 打包构建上下文(Dockerfile+数据)上传 S3 → 以预签名 URL 创建 4 个 kaniko Job(OSRM×3+Valhalla)构建并推 registry,等待完成
 5. `kubectl set image` patch 四个 Deployment(RBAC:本 namespace 内 deployments get/patch + jobs create)→ 原生滚动
 6. golden 冒烟 Job(集群内 curl gateway 全 18 用例)→ 失败:`kubectl rollout undo` 四个 Deployment + exit 1
 
