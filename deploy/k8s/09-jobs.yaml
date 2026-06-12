@@ -1,6 +1,7 @@
 # deploy/k8s/09-jobs.yaml — one-shot Jobs
 # migrate: runs on initial deploy and schema upgrades
 # bootstrap (T3) and golden (T4) Jobs will be appended here in later tasks
+# RE-RUN: kubectl -n places delete job migrate && kubectl apply -f deploy/k8s/09-jobs.yaml
 apiVersion: batch/v1
 kind: Job
 metadata: {name: migrate, namespace: places}
