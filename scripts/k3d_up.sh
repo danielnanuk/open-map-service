@@ -4,12 +4,16 @@ set -euo pipefail
 
 # 确保 kubectl 可用 — k3d 不安装 kubectl
 export PATH="$HOME/.local/bin:$PATH"
+command -v kubectl >/dev/null || { echo "kubectl 未安装(本机曾装至 ~/.local/bin):curl -fsSL -o ~/.local/bin/kubectl https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl && chmod +x ~/.local/bin/kubectl" >&2; exit 1; }
 
-k3d registry create places-reg --port 5500 2>/dev/null || true
-k3d cluster create places \
+k3d registry list 2>/dev/null | grep -q '^k3d-places-reg ' || k3d registry create places-reg --port 5500
+k3d cluster list 2>/dev/null | grep -q '^places ' || k3d cluster create places \
   --registry-use k3d-places-reg:5500 \
   -p "8088:80@loadbalancer" \
-  --agents 0 2>/dev/null || true
+  --agents 0
 
 kubectl cluster-info
 echo "registry(宿主推送): localhost:5500 ;(集群内引用): k3d-places-reg:5500"
+
+# 预建 namespace,确保 99-minio-k3d.yaml 等 manifests 可直接 apply
+kubectl create namespace places --dry-run=client -o yaml | kubectl apply -f -

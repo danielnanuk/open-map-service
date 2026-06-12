@@ -6,14 +6,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -fsSL -o /usr/local/bin/kubectl \
       "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl" \
     && chmod +x /usr/local/bin/kubectl
+# 与 kubectl 同纪律:版本钉死
 RUN curl -fsSL -o /usr/local/bin/mc \
-      "https://dl.min.io/client/mc/release/linux-amd64/mc" \
+      "https://dl.min.io/client/mc/release/linux-amd64/archive/mc.RELEASE.2025-08-13T08-35-41Z" \
     && chmod +x /usr/local/bin/mc
 COPY etl/ /app/etl/
 COPY golden/ /app/golden/
 COPY db/migrations/ /app/migrations/
 # scripts/k8s_pipeline.sh 在 M6-T5 实现;此处为占位 stub
 COPY scripts/k8s_pipeline.sh /app/
-# Makefile py-setup: pip install -e 'etl[dev]';builder 镜像用同等可编辑安装
-RUN pip install --no-cache-dir -e '/app/etl[dev]'
+# 生产镜像:非可编辑安装,不含 dev/pytest
+RUN pip install --no-cache-dir '/app/etl'
 WORKDIR /app

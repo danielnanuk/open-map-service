@@ -10,8 +10,9 @@ spec:
     spec:
       containers:
         - name: minio
-          image: minio/minio:latest
+          image: minio/minio:RELEASE.2025-04-22T22-12-26Z  # EDIT-ME: pin 已知发行版;如需更新请锁新 tag
           args: ["server", "/data"]
+          # EDIT-ME: 仅 k3d 本地验证用明文凭据;真集群必须改用 Secret(01-secrets)
           env:
             - {name: MINIO_ROOT_USER, value: placesminio}
             - {name: MINIO_ROOT_PASSWORD, value: placesminio123}
