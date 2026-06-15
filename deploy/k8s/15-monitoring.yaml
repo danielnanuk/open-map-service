@@ -31,7 +31,7 @@ spec:
     matchLabels:
       app: gateway
   endpoints:
-    - port: "8080"        # 对应 07-gateway.yaml Service 的 port 名或 port 号
+    - port: http           # 对应 07-gateway.yaml Service port name: http (port 8080)
       path: /metrics
       interval: 15s
       scrapeTimeout: 10s

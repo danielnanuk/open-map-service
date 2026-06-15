@@ -17,3 +17,11 @@ echo "registry(宿主推送): localhost:5500 ;(集群内引用): k3d-places-reg:
 
 # 预建 namespace,确保 99-minio-k3d.yaml 等 manifests 可直接 apply
 kubectl create namespace places --dry-run=client -o yaml | kubectl apply -f -
+
+# 下一步:在 apply secrets/manifests 之后、运行 migrate Job 之前,执行:
+#   bash scripts/k8s_bootstrap_config.sh
+# 该脚本幂等创建以下运行时 ConfigMap/Secret:
+#   ConfigMap/migrations      (09-jobs.yaml Job/migrate)
+#   ConfigMap/etl-mappings    (09-jobs.yaml Job/bootstrap-data, 11-etl-cronjob.yaml)
+#   ConfigMap/golden-runner   (10-golden.yaml Job/golden-smoke)
+#   Secret/golden-api-key     (10-golden.yaml Job/golden-smoke + PG api_keys)

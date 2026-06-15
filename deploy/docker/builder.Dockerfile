@@ -13,7 +13,7 @@ RUN curl -fsSL -o /usr/local/bin/mc \
 COPY etl/ /app/etl/
 COPY golden/ /app/golden/
 COPY db/migrations/ /app/migrations/
-# scripts/k8s_pipeline.sh 在 M6-T5 实现;此处为占位 stub
+# k8s_pipeline.sh: 完整实现的周更管道编排脚本(ETL → index → kaniko → set image → golden)
 COPY scripts/k8s_pipeline.sh /app/
 # 生产镜像:非可编辑安装,不含 dev/pytest
 RUN pip install --no-cache-dir '/app/etl'

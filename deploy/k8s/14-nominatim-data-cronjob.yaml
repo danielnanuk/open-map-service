@@ -5,6 +5,15 @@
 #     真实 import 须在磁盘充足(≥10Gi)、独立 PVC 的真集群中执行。
 #     本地 k3d 验证环境 DO NOT RUN(96% disk,~4.2G free)。
 #
+# ⚠️  已知限制:月更 initContainer 跳过逻辑导致静默 no-op
+#     04-nominatim.yaml 的 initContainer 检测到 /nomdata/PG_VERSION 存在即跳过下载与解包。
+#     本 CronJob 执行流程:patach ConfigMap nominatim-data-version(新包名) → rollout restart →
+#     新 Pod 启动 → initContainer 发现 PVC 内已有 PG_VERSION(旧数据) → 直接跳过 → 月更静默 no-op。
+#     修复方向(真集群实施前必须解决):
+#       方案 A: initContainer 改为比较 PACKAGE 版本号(读 ConfigMap 与 PVC 内缓存版本对比)
+#       方案 B: 月更 Job 在 rollout restart 前先清空 PVC(或使用独立 PVC + 滚动切换)
+#     在上述修复落地之前,月更 CronJob 结构正确但实际不会替换 Nominatim 数据。
+#
 # 月更流程:
 #   initContainers:
 #     1. fetch-pbf: 下载 Cambodia PBF (geofabrik ~100MB) → /pbf

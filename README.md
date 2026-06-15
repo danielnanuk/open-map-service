@@ -319,6 +319,8 @@ Valhalla 串行分块路径在单机上不在 SLA 内，响应会被截断。
 
 Nominatim 唯一例外:其数据是导入后的 PG 数据目录,kaniko 构建期无法跑 `nominatim import`,故走 initContainer + S3 tar 方式;月更 CronJob(`14-nominatim-data-cronjob.yaml`)完成打包与推送。
 
+> **文件编号说明:** spec §7 规划中 10 号预留给 RBAC/CronJob;实现时 M6-T4 将 golden smoke Job 放入 `10-golden.yaml`,导致后续文件整体后移:`11-etl-cronjob.yaml`、`12-rbac.yaml`、`13-backup-cronjob.yaml`、`14-nominatim-data-cronjob.yaml`、`15-monitoring.yaml`。与 spec §7 原始编号存在 +1 偏移,功能内容不变。
+
 ---
 
 ### EDIT-ME 参数表
@@ -345,7 +347,7 @@ Nominatim 唯一例外:其数据是导入后的 PG 数据目录,kaniko 构建期
 | `11-etl-cronjob.yaml` | `image` registry 前缀 / tag | `k3d-places-reg:5500/places/builder:dev` | 替换为固定 digest tag(如 `builder:202506XXXXXX`) |
 | `11-etl-cronjob.yaml` | REGISTRY env | `k3d-places-reg:5000/places` | 替换为集群 registry 前缀 |
 | `13-backup-cronjob.yaml` | `image` registry 前缀 | `k3d-places-reg:5500/places/builder:dev` | 钉固定 digest tag |
-| `13-backup-cronjob.yaml` | 调度时间 / KEEP | `0 1 * * *` / `7` | 生产可改 `14` 或 `30` |
+| `13-backup-cronjob.yaml` | 调度时间 / KEEP | `0 2 * * *` / `7` | 生产可改 `14` 或 `30` |
 | `14-nominatim-data-cronjob.yaml` | `PBF_URL` | 柬埔寨 PBF | 真集群调整目标区域 URL |
 | `14-nominatim-data-cronjob.yaml` | 两处 `image` | `k3d-places-reg:5500/places/...` | 钉固定 digest(生产) |
 | `14-nominatim-data-cronjob.yaml` | emptyDir `sizeLimit` | `8Gi` | 真集群建议改为独立 PVC |
@@ -397,7 +399,7 @@ kubectl -n places exec deploy/opensearch -- curl -s -X POST \
   'http://localhost:9200/_nodes/reload_secure_settings'
 # 注册快照仓库
 kubectl -n places exec deploy/opensearch -- curl -s -X PUT \
-  'http://localhost:9200/_snapshot/s3-backup' \
+  'http://localhost:9200/_snapshot/places-s3-backup' \
   -H 'Content-Type: application/json' \
   -d '{"type":"s3","settings":{"bucket":"places","base_path":"opensearch-snapshots"}}'
 ```
@@ -424,6 +426,11 @@ kubectl apply -f deploy/k8s/03-opensearch.yaml
 kubectl apply -f deploy/k8s/12-rbac.yaml
 kubectl wait pod -l app=postgis    -n places --for=condition=Ready --timeout=120s
 kubectl wait pod -l app=opensearch -n places --for=condition=Ready --timeout=180s
+
+# ── 步骤 2.5:运行时 ConfigMap/Secret 引导 ──────────────────────
+# 创建 migrations / etl-mappings / golden-runner / golden-api-key
+# (各 Job 引用的运行时配置;幂等,可重复执行)
+bash scripts/k8s_bootstrap_config.sh
 
 # ── 步骤 3:migrate Job ──────────────────────────────────────────
 kubectl apply -f deploy/k8s/09-jobs.yaml
@@ -491,7 +498,7 @@ kubectl get endpoints gateway -n places
 
 ```bash
 # 方式 A:手动触发一次周更 CronJob
-kubectl create job --from=cronjob/etl-pipeline manual-etl-$(date +%s) -n places
+kubectl create job --from=cronjob/etl-weekly manual-etl-$(date +%s) -n places
 
 # 方式 B:仅更新特定 Deployment 的数据镜像(已有新 tag)
 kubectl set image deployment/osrm-car  osrm-car=registry.example.com/places/osrm-data-car:202506141200  -n places
@@ -516,9 +523,9 @@ kubectl rollout history deployment/osrm-car -n places
 
 #### 备份与恢复
 
-- **备份**:由 `13-backup-cronjob.yaml` 每日 01:30 触发,`pg_dump → S3`,保留 7 份。
-- **OpenSearch 快照**:S3 repository-s3 仓库(`_snapshot/s3-backup`),快照 CronJob 同步保留 7 份。路由图数据镜像不备份——tag 不可变,可直接从 registry 重得(方案 A 红利)。
-- **恢复**:参见 `scripts/restore.sh`(单机 compose 版本参考流程);K8s 形态下 PostgreSQL 恢复从 S3 下载 dump 执行 `pg_restore`,OpenSearch 恢复执行 `_snapshot/s3-backup/<name>/_restore`。
+- **备份**:由 `13-backup-cronjob.yaml` 每日 02:00 触发,`pg_dump → S3`,保留 7 份。
+- **OpenSearch 快照**:S3 repository-s3 仓库(`_snapshot/places-s3-backup`),快照 CronJob 同步保留 7 份。路由图数据镜像不备份——tag 不可变,可直接从 registry 重得(方案 A 红利)。
+- **恢复**:参见 `scripts/restore.sh`(单机 compose 版本参考流程);K8s 形态下 PostgreSQL 恢复从 S3 下载 dump 执行 `pg_restore`,OpenSearch 恢复执行 `_snapshot/places-s3-backup/<name>/_restore`。
 
 #### 周更管道(CronJob)
 
@@ -581,6 +588,7 @@ annotations:
 - **dev box 磁盘 96-97%** 是本地验证的环境约束(非设计缺陷),限制了 k3d 内全量 PBF 处理与全量 kaniko 构建的执行。
 - **OpenSearch watermark 本地覆盖**:本地 k3d 将 flood/high/low watermark 临时调高以绕过 96% 磁盘限制;真集群使用 OpenSearch 默认值(85%/90%/95%)无需覆盖。
 - **单机 compose 回退已不可用**:M6 期间卷/备份数据在磁盘事故中清理;M6 目标为完整 K8s 化,compose 形态不再维护,不影响 M6 验收。
+- **Nominatim 月更 CronJob 当前为静默 no-op**:`14-nominatim-data-cronjob.yaml` 的流程正确,但 `04-nominatim.yaml` initContainer 检测到 PVC 已存在 `PG_VERSION` 即跳过下载与解包,导致 rollout restart 后新 Pod 仍使用旧数据。修复方向:initContainer 改为比较包版本号,或月更 Job 在 restart 前清空/替换 PVC。真集群部署前必须解决(详见 `14-nominatim-data-cronjob.yaml` 顶部注释)。
 
 **延后到真集群执行的项**:
 - 全量 ETL(Overture + OSM 完整 PBF 拉取 + 入库)
