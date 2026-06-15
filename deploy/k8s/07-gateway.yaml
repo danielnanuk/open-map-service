@@ -58,6 +58,8 @@ spec:
               cpu: "100m"
             limits:
               memory: "256Mi"
+              # 故意不设 cpu limit:Burstable QoS,HPA 以 request(100m)为分母正常工作
+              # EDIT-ME: 生产可加 cpu limit(如 "500m")限制单 Pod 最坏 CPU 占用
 ---
 apiVersion: v1
 kind: Service
