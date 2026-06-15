@@ -3,7 +3,9 @@
 # ServiceAccount 已在 00-namespace.yaml 中声明;此文件添加 Role + RoleBinding
 #
 # 权限矩阵:
-#   deployments       get/list/patch    — kubectl set image + rollout status/undo
+#   deployments       get/list/watch/patch/update — kubectl set image + rollout status/undo
+#                     (watch 是 kubectl rollout status --timeout Watch API 所必需)
+#   replicasets       get/list/watch     — rollout status 需要查询 ReplicaSet 状态
 #   jobs              create/get/list/delete — 创建 kaniko Job + golden Job,等待 + 清理
 #   pods              get/list          — 等待 kaniko Pod 状态(kubectl logs job/xxx)
 #   pods/log          get               — 读取 kaniko / golden 日志
@@ -19,13 +21,14 @@ metadata:
   namespace: places
 rules:
   # kubectl set image, rollout status, rollout undo
+  # watch は rollout status --timeout が Watch API を呼ぶため必須(省くと 403)
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list", "patch", "update"]
-  # Deployment rollout status needs replicasets
+    verbs: ["get", "list", "watch", "patch", "update"]
+  # Deployment rollout status needs replicasets (watch required for progress tracking)
   - apiGroups: ["apps"]
     resources: ["replicasets"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
   # 创建 kaniko Jobs + golden-weekly Jobs;等待并清理
   - apiGroups: ["batch"]
     resources: ["jobs"]

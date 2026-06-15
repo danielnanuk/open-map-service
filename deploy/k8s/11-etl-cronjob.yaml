@@ -22,9 +22,11 @@ spec:
   schedule: "0 3 * * 1"
   # Forbid: 禁止并发执行(上次未完成则跳过本次,防止多实例并发写 PostGIS/OS)
   concurrencyPolicy: Forbid
-  # 保留最近 3 次成功 / 1 次失败的 Job 记录供排查
+  # 宕机恢复后若错过触发窗口超过 6h(21600s)则跳过该次,避免批量补跑并发写
+  startingDeadlineSeconds: 21600
+  # 保留最近 3 次成功 / 3 次失败的 Job 记录供排查(事故后对比分析)
   successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
       # 全流程 timeout:6h(含镜像构建 + 数据下载 + rolling + smoke)

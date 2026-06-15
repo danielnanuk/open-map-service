@@ -46,7 +46,7 @@ NAMESPACE="${NAMESPACE:-places}"
 REGISTRY="${REGISTRY:-k3d-places-reg:5000/places}"
 # kaniko executor — tag 固定,避免意外升级
 KANIKO_IMAGE="${KANIKO_IMAGE:-gcr.io/kaniko-project/executor:v1.23.2}"
-TS="$(date -u +%Y%m%d%H%M)"
+TS="$(date -u +%Y%m%d%H%M%S)"
 WORKDIR="${WORKDIR:-/tmp/pipeline-${TS}}"
 mkdir -p "${WORKDIR}"
 
@@ -360,6 +360,14 @@ for DEPLOY in osrm-car osrm-moto osrm-tuktuk valhalla; do
 done
 
 ###############################################################################
+# 步骤 5 完成后:清理本次运行的 S3 构建上下文(每次约 600MB×4,避免无限累积)       #
+###############################################################################
+log "[5/6] 清理 S3 构建上下文 (build-context/*-${TS}.tar.gz)"
+for PROFILE in osrm-car osrm-moto osrm-tuktuk valhalla; do
+    mc rm "pipeline/${S3_BUCKET}/build-context/${PROFILE}-${TS}.tar.gz" 2>/dev/null || true
+done
+
+###############################################################################
 # 步骤 [6/6] Golden smoke Job — 失败则 rollout undo 四个 Deployment + exit 1    #
 ###############################################################################
 log "[6/6] Golden smoke Job"
@@ -435,10 +443,9 @@ kubectl -n "${NAMESPACE}" logs "job/${GOLDEN_JOB}" --tail=100 >&2 || true
 
 if [ "${GOLDEN_OK}" -ne 1 ]; then
     log "ROLLBACK: golden smoke 失败 → rollout undo 四个 Deployment"
-    kubectl -n "${NAMESPACE}" rollout undo deployment/osrm-car
-    kubectl -n "${NAMESPACE}" rollout undo deployment/osrm-moto
-    kubectl -n "${NAMESPACE}" rollout undo deployment/osrm-tuktuk
-    kubectl -n "${NAMESPACE}" rollout undo deployment/valhalla
+    for DEPLOY in osrm-car osrm-moto osrm-tuktuk valhalla; do
+        kubectl -n "${NAMESPACE}" rollout undo "deployment/${DEPLOY}" || echo "WARN: rollout undo ${DEPLOY} failed" >&2
+    done
     log "  等待 rollback 稳定..."
     for DEPLOY in osrm-car osrm-moto osrm-tuktuk valhalla; do
         kubectl -n "${NAMESPACE}" rollout status "deployment/${DEPLOY}" --timeout=10m || true
