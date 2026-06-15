@@ -1,0 +1,104 @@
+# deploy/k8s/07-gateway.yaml — Gateway Deployment + Service + HPA + PDB
+# EDIT-ME: replace k3d-places-reg:5500 with your production registry prefix before deploying to prod
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: places
+  labels:
+    app: gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: gateway
+          image: k3d-places-reg:5500/places/gateway:dev  # EDIT-ME: registry 前缀
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - {name: PORT, value: "8080"}
+            - {name: AUTH_ENABLED, value: "true"}
+            - {name: OPENSEARCH_URL, value: "http://opensearch:9200"}
+            - {name: NOMINATIM_URL, value: "http://nominatim:8080"}
+            - {name: VALHALLA_URL, value: "http://valhalla:8002"}
+            - {name: OSRM_CAR_URL, value: "http://osrm-car:5000"}
+            - {name: OSRM_MOTO_URL, value: "http://osrm-moto:5000"}
+            - {name: OSRM_TUKTUK_URL, value: "http://osrm-tuktuk:5000"}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: places-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql://places:$(POSTGRES_PASSWORD)@postgis:5432/places"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: places
+spec:
+  selector:
+    app: gateway
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway
+  namespace: places
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway
+  namespace: places
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: gateway
