@@ -24,3 +24,34 @@ spec:
       volumes:
         - name: migrations
           configMap: {name: migrations}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: bootstrap-data, namespace: places}
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      serviceAccountName: places-pipeline
+      containers:
+        - name: bootstrap
+          image: k3d-places-reg:5500/places/builder:dev
+          imagePullPolicy: Always
+          command: ["bash", "/app/k8s_pipeline.sh"]
+          env:
+            - {name: PIPELINE_MODE, value: bootstrap}
+            - {name: BOOTSTRAP_SKIP_DRIFT, value: "1"}
+            - {name: OPENSEARCH_URL, value: "http://opensearch:9200"}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: places-secrets, key: POSTGRES_PASSWORD}}
+            - {name: DATABASE_URL, value: "postgresql://places:$(POSTGRES_PASSWORD)@postgis:5432/places"}
+          envFrom: [{secretRef: {name: s3-cred}}]
+          resources: {requests: {memory: 512Mi}, limits: {memory: 6Gi}}
+          volumeMounts:
+            - name: etl-mappings
+              mountPath: /usr/local/lib/python3.11/site-packages/etl/mappings.json
+              subPath: mappings.json
+      volumes:
+        - name: etl-mappings
+          configMap: {name: etl-mappings}

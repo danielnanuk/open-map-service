@@ -1,0 +1,57 @@
+# deploy/k8s/12-rbac.yaml — RBAC for places-pipeline ServiceAccount
+# Principle of least privilege (spec §4): pipeline 仅需操作本 namespace 内资源
+# ServiceAccount 已在 00-namespace.yaml 中声明;此文件添加 Role + RoleBinding
+#
+# 权限矩阵:
+#   deployments       get/list/patch    — kubectl set image + rollout status/undo
+#   jobs              create/get/list/delete — 创建 kaniko Job + golden Job,等待 + 清理
+#   pods              get/list          — 等待 kaniko Pod 状态(kubectl logs job/xxx)
+#   pods/log          get               — 读取 kaniko / golden 日志
+#   configmaps        get               — 读取 etl-mappings / golden-runner
+#
+# 注:pipeline 不需要 delete secrets / nodes / clusterroles,负向验证:
+#   kubectl auth can-i delete secrets --as=system:serviceaccount:places:places-pipeline → no
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pipeline-role
+  namespace: places
+rules:
+  # kubectl set image, rollout status, rollout undo
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "patch", "update"]
+  # Deployment rollout status needs replicasets
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list"]
+  # 创建 kaniko Jobs + golden-weekly Jobs;等待并清理
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "delete"]
+  # 读取 kaniko / golden Pod 日志(kubectl logs job/xxx)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  # 读取 etl-mappings + golden-runner ConfigMap
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pipeline-rolebinding
+  namespace: places
+subjects:
+  - kind: ServiceAccount
+    name: places-pipeline
+    namespace: places
+roleRef:
+  kind: Role
+  name: pipeline-role
+  apiGroup: rbac.authorization.k8s.io

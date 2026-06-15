@@ -1,0 +1,123 @@
+# deploy/k8s/11-etl-cronjob.yaml — 周更数据管道 CronJob
+# 每周一 03:00 UTC 运行完整六步管道:
+#   步骤 1: 下载 OSM PBF + Overture → ETL 链 → PostGIS
+#   步骤 2: 漂移闸 ±15%(失败 → Job exit1 → 集群既有 kube alerting 捕获)
+#   步骤 3: 重建 OpenSearch 索引 + alias 原子切换
+#   步骤 4: 打包构建上下文 → S3 → 创建 kaniko Jobs(OSRM×3+Valhalla)→ 等待完成
+#   步骤 5: kubectl set image 四个 Deployment → 原生 rolling(maxUnavailable=0)
+#   步骤 6: golden 冒烟 → 失败: rollout undo 四个 Deployment + exit1
+#
+# CronJob 失败由集群既有 Prometheus/kube alerting 捕获(spec §4 步骤 2 备注)
+# 手动触发一次: kubectl -n places create job --from=cronjob/etl-weekly etl-weekly-manual-$(date +%s)
+# 查看运行日志: kubectl -n places logs -l app=etl-pipeline --tail=200
+#
+# EDIT-ME: REGISTRY / image tag / 调度时间
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: etl-weekly
+  namespace: places
+spec:
+  # 每周一 03:00 UTC(캄보디아时区 10:00,数据更新低谷期)
+  schedule: "0 3 * * 1"
+  # Forbid: 禁止并发执行(上次未完成则跳过本次,防止多实例并发写 PostGIS/OS)
+  concurrencyPolicy: Forbid
+  # 保留最近 3 次成功 / 1 次失败的 Job 记录供排查
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      # 全流程 timeout:6h(含镜像构建 + 数据下载 + rolling + smoke)
+      activeDeadlineSeconds: 21600
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app: etl-pipeline
+        spec:
+          restartPolicy: Never
+          serviceAccountName: places-pipeline
+          containers:
+            - name: pipeline
+              # EDIT-ME: 替换为固定 digest tag(如 builder:202506XXXXXX)避免意外升级
+              image: k3d-places-reg:5500/places/builder:dev
+              imagePullPolicy: Always
+              command: ["bash", "/app/k8s_pipeline.sh"]
+              env:
+                # 管道模式:weekly 执行全六步
+                - name: PIPELINE_MODE
+                  value: weekly
+                # PostgreSQL(in-cluster Service DNS)
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: places-secrets
+                      key: POSTGRES_PASSWORD
+                - name: DATABASE_URL
+                  value: "postgresql://places:$(POSTGRES_PASSWORD)@postgis:5432/places"
+                # OpenSearch(in-cluster Service DNS)
+                - name: OPENSEARCH_URL
+                  value: "http://opensearch:9200"
+                # OSRM/Valhalla 数据镜像目标 registry
+                # k3d 本地:使用 :5000 内部端口(kaniko Pod 内推送用)
+                # EDIT-ME: 真实集群改为集群 registry 前缀(如 registry.example.com/places)
+                - name: REGISTRY
+                  value: "k3d-places-reg:5000/places"
+                # K8s 命名空间(CronJob 运行于 places namespace)
+                - name: NAMESPACE
+                  value: places
+                # kaniko executor 固定 tag
+                - name: KANIKO_IMAGE
+                  value: "gcr.io/kaniko-project/executor:v1.23.2"
+                # PLACES_COUNT_BEFORE 由 record-baseline init container 写入 /shared/before.env
+                # pipeline 脚本在启动时 source /shared/before.env 自动获取
+                # (无需在此 env 块中重复声明;init container 已处理)
+              # S3/MinIO 凭证注入(mc alias + presign)
+              envFrom:
+                - secretRef:
+                    name: s3-cred
+              volumeMounts:
+                - name: etl-mappings
+                  mountPath: /usr/local/lib/python3.11/site-packages/etl/mappings.json
+                  subPath: mappings.json
+                - name: shared-env
+                  mountPath: /shared
+              resources:
+                requests:
+                  memory: 512Mi
+                  cpu: 500m
+                limits:
+                  memory: 6Gi
+                  cpu: "4"
+          initContainers:
+            # init container: ETL 前查询 places 行数 → 写 /shared/before.env
+            # 主容器(k8s_pipeline.sh)在 set -euo pipefail 后立即 source /shared/before.env,
+            # 将 PLACES_COUNT_BEFORE 注入当前 shell,供步骤 [2/6] 漂移闸使用
+            - name: record-baseline
+              image: postgres:16-alpine
+              command: ["sh", "-c"]
+              args:
+                - |
+                  COUNT=$(PGPASSWORD="$POSTGRES_PASSWORD" psql \
+                    -h postgis -U places -d places -t -A \
+                    -c "SELECT count(*) FROM places" 2>/dev/null || echo 0)
+                  echo "PLACES_COUNT_BEFORE=${COUNT}" > /shared/before.env
+                  echo "baseline count: ${COUNT}"
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: places-secrets
+                      key: POSTGRES_PASSWORD
+              volumeMounts:
+                - name: shared-env
+                  mountPath: /shared
+              resources:
+                requests: {memory: 32Mi, cpu: 50m}
+                limits:   {memory: 64Mi}
+          volumes:
+            - name: etl-mappings
+              configMap:
+                name: etl-mappings
+            - name: shared-env
+              emptyDir: {}
