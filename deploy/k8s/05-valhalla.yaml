@@ -1,0 +1,28 @@
+# deploy/k8s/05-valhalla.yaml — 数据即镜像;tag 由周更管道 patch,bootstrap 为初值
+# EDIT-ME: image registry 前缀
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: valhalla, namespace: places}
+spec:
+  replicas: 1
+  strategy: {rollingUpdate: {maxUnavailable: 0, maxSurge: 1}, type: RollingUpdate}
+  selector: {matchLabels: {app: valhalla}}
+  template:
+    metadata: {labels: {app: valhalla}}
+    spec:
+      containers:
+        - name: valhalla
+          image: k3d-places-reg:5500/places/valhalla-data:bootstrap
+          ports: [{containerPort: 8002}]
+          readinessProbe:
+            httpGet: {path: /status, port: 8002}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: {memory: 512Mi, cpu: 200m}
+            limits: {memory: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: valhalla, namespace: places}
+spec: {selector: {app: valhalla}, ports: [{port: 8002}]}

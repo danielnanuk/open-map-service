@@ -1,0 +1,98 @@
+# deploy/k8s/04-nominatim.yaml — initContainer 拉 S3 包解到 PVC(持久化;幂等)
+# 数据包版本经 ConfigMap 注入;月更 CronJob(T6)更新 ConfigMap + rollout restart
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: nominatim-data-version, namespace: places}
+data: {PACKAGE: "nominatim-data-bootstrap.tar.zst"}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: nominatim-pgdata, namespace: places}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 4Gi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: nominatim, namespace: places}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: nominatim}}
+  template:
+    metadata: {labels: {app: nominatim}}
+    spec:
+      initContainers:
+        - name: fetch-data
+          image: minio/mc:RELEASE.2025-04-08T15-39-49Z
+          command: ["sh", "-c"]
+          args:
+            - |
+              if [ -f /nomdata/PG_VERSION ]; then
+                echo "PG data already present ($(cat /nomdata/PG_VERSION)), skipping download"
+                exit 0
+              fi
+              echo "Downloading $PACKAGE from MinIO..."
+              mc alias set s3 "$S3_ENDPOINT" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" &&
+              mc cp "s3/$S3_BUCKET/$PACKAGE" /nomdata/data.tar.zst
+          env:
+            - name: PACKAGE
+              valueFrom: {configMapKeyRef: {name: nominatim-data-version, key: PACKAGE}}
+          envFrom: [{secretRef: {name: s3-cred}}]
+          volumeMounts: [{name: nomdata, mountPath: /nomdata}]
+          resources:
+            requests: {memory: 64Mi, cpu: 50m}
+            limits: {memory: 256Mi}
+        - name: unpack-data
+          image: alpine:3.20
+          command: ["sh", "-c"]
+          args:
+            - |
+              if [ -f /nomdata/PG_VERSION ]; then
+                echo "PG data already present ($(cat /nomdata/PG_VERSION)), skipping unpack"
+                touch /nomdata/import-finished
+                chown -R 100:103 /nomdata
+                exit 0
+              fi
+              if [ ! -f /nomdata/data.tar.zst ]; then
+                echo "ERROR: data.tar.zst not found in /nomdata" >&2; exit 1
+              fi
+              apk add --no-cache zstd >/dev/null &&
+              cd /nomdata &&
+              zstd -d < /nomdata/data.tar.zst | tar -xf - &&
+              rm -f /nomdata/postmaster.pid /nomdata/data.tar.zst &&
+              touch /nomdata/import-finished &&
+              chown -R 100:103 /nomdata &&
+              echo "Unpack complete: $(cat /nomdata/PG_VERSION)"
+          volumeMounts:
+            - {name: nomdata, mountPath: /nomdata}
+          resources:
+            requests: {memory: 128Mi, cpu: 100m}
+            limits: {memory: 512Mi}
+      containers:
+        - name: nominatim
+          image: k3d-places-reg:5500/places/nominatim:v4
+          env:
+            - {name: NOMINATIM_PASSWORD, value: nominatim_places}
+            # PBF_URL must be non-empty for config.sh to pass, but import is
+            # skipped because import-finished is created by unpack-data initContainer
+            - {name: PBF_URL, value: "http://placeholder.invalid/skip-import.osm.pbf"}
+          ports: [{containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /status, port: 8080}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 30
+          resources:
+            requests: {memory: 1Gi, cpu: 250m}
+            limits: {memory: 4Gi}
+          volumeMounts:
+            - {name: nomdata, mountPath: /var/lib/postgresql/16/main}
+      volumes:
+        - name: nomdata
+          persistentVolumeClaim: {claimName: nominatim-pgdata}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: nominatim, namespace: places}
+spec: {selector: {app: nominatim}, ports: [{port: 8080}]}

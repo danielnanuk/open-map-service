@@ -1,0 +1,82 @@
+# deploy/k8s/06-osrm.yaml — 数据即镜像;tag 由周更管道 patch,bootstrap 为初值
+# EDIT-ME: image registry 前缀
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: osrm-car, namespace: places}
+spec:
+  replicas: 1
+  strategy: {rollingUpdate: {maxUnavailable: 0, maxSurge: 1}, type: RollingUpdate}
+  selector: {matchLabels: {app: osrm-car}}
+  template:
+    metadata: {labels: {app: osrm-car}}
+    spec:
+      containers:
+        - name: osrm
+          image: k3d-places-reg:5500/places/osrm-data-car:bootstrap
+          ports: [{containerPort: 5000}]
+          readinessProbe:
+            tcpSocket: {port: 5000}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests: {memory: 300Mi, cpu: 100m}
+            limits: {memory: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: osrm-car, namespace: places}
+spec: {selector: {app: osrm-car}, ports: [{port: 5000}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: osrm-moto, namespace: places}
+spec:
+  replicas: 1
+  strategy: {rollingUpdate: {maxUnavailable: 0, maxSurge: 1}, type: RollingUpdate}
+  selector: {matchLabels: {app: osrm-moto}}
+  template:
+    metadata: {labels: {app: osrm-moto}}
+    spec:
+      containers:
+        - name: osrm
+          image: k3d-places-reg:5500/places/osrm-data-moto:bootstrap
+          ports: [{containerPort: 5000}]
+          readinessProbe:
+            tcpSocket: {port: 5000}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests: {memory: 300Mi, cpu: 100m}
+            limits: {memory: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: osrm-moto, namespace: places}
+spec: {selector: {app: osrm-moto}, ports: [{port: 5000}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: osrm-tuktuk, namespace: places}
+spec:
+  replicas: 1
+  strategy: {rollingUpdate: {maxUnavailable: 0, maxSurge: 1}, type: RollingUpdate}
+  selector: {matchLabels: {app: osrm-tuktuk}}
+  template:
+    metadata: {labels: {app: osrm-tuktuk}}
+    spec:
+      containers:
+        - name: osrm
+          image: k3d-places-reg:5500/places/osrm-data-tuktuk:bootstrap
+          ports: [{containerPort: 5000}]
+          readinessProbe:
+            tcpSocket: {port: 5000}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests: {memory: 300Mi, cpu: 100m}
+            limits: {memory: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: osrm-tuktuk, namespace: places}
+spec: {selector: {app: osrm-tuktuk}, ports: [{port: 5000}]}
