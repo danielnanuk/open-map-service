@@ -307,6 +307,290 @@ Valhalla 串行分块路径在单机上不在 SLA 内，响应会被截断。
 `Shutdown(ctx)` 设 15s drain 窗口。**部署窗口注意**：正在处理的 in-flight 长请求（矩阵/路由）
 若超过 15s 将被截断。建议在低流量窗口滚动重启，或在重启前通过负载均衡将流量切走。
 
+## K8s 部署(M6)
+
+### 架构反转:数据即镜像 + 滚动 Deployment
+
+单机模型的根本缺陷在于"原地覆写数据文件"——`osrm-extract` 以 O_TRUNC 改写 `.osrm` 文件时,在线 OSRM 进程 mmap 同一 inode 读到损坏数据,触发 SIGSEGV(exit 139);磁盘事故亦来自同一根因(M5 现场复现)。K8s 形态用**不可变版本化数据制品 + 滚动 Deployment** 从结构上消除这类缺陷:
+
+- 引擎(OSRM×3、Valhalla)以"数据镜像"交付——镜像内已包含预烘焙路由图,容器启动即服务,无需运行期数据构建。
+- 数据更新 = 新时间戳 tag 镜像 + 原生 rolling(maxUnavailable=0):旧 Pod 继续服务至新 Pod readiness 通过,任何时刻不存在"原地覆写正在 mmap 的文件"。
+- 回滚 = `kubectl rollout undo`;扩容 = `replicas + 1`。OSRM-SIGSEGV / 磁盘事故在此模型下**不复存在**。
+
+Nominatim 唯一例外:其数据是导入后的 PG 数据目录,kaniko 构建期无法跑 `nominatim import`,故走 initContainer + S3 tar 方式;月更 CronJob(`14-nominatim-data-cronjob.yaml`)完成打包与推送。
+
+---
+
+### EDIT-ME 参数表
+
+所有需要按集群定制的值均在对应文件顶部以 `# EDIT-ME` 注释标出。下表汇总全部参数化点:
+
+| 文件 | 参数 | k3d 默认值 | 生产指引 |
+|------|------|-----------|---------|
+| `01-secrets.example.yaml` / `01-secrets.yaml` | `POSTGRES_PASSWORD` | 示例弱密码 | `openssl rand -hex 24` 生成强密码,不入库 |
+| `01-secrets.example.yaml` / `01-secrets.yaml` | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `placesminio` / `placesminio` | 替换为真集群已有 S3 凭据 |
+| `01-secrets.example.yaml` / `01-secrets.yaml` | `S3_ENDPOINT` | `http://minio.places.svc:9000` | 替换为真集群 S3 端点 |
+| `01-secrets.example.yaml` / `01-secrets.yaml` | `registry-cred` | _(k3d 无需鉴权)_ | 真集群按 registry 鉴权创建 docker-config Secret |
+| `02-postgis.yaml` | `storageClassName` | `local-path`(k3d 默认) | 改为集群已有 StorageClass(如 `standard`、`gp3`) |
+| `03-opensearch.yaml` | `storageClassName` | `local-path` | 同上 |
+| `03-opensearch.yaml` | `busybox` init 镜像 | `busybox:1.36.1` | 生产钉 digest(`sha256:...`) |
+| `05-valhalla.yaml` | image registry 前缀 | `k3d-places-reg:5500/places` | 替换为集群 registry 前缀 |
+| `06-osrm.yaml` | image registry 前缀 | `k3d-places-reg:5500/places` | 替换为集群 registry 前缀 |
+| `07-gateway.yaml` | `image` registry 前缀 | `k3d-places-reg:5500/places/gateway:dev` | 替换为集群 registry/tag |
+| `07-gateway.yaml` | cpu limit | _(未设,Burstable QoS)_ | 生产可加 `"500m"` 限制单 Pod 最坏 CPU |
+| `08-ingress.yaml` | `ingressClassName` | `traefik` | 改为集群 ingress controller(`nginx` 等) |
+| `08-ingress.yaml` | `host` | `places.local` | 改为生产域名 |
+| `09-jobs.yaml` | bootstrap-data `image` | `k3d-places-reg:5500/places/builder:dev` | 钉固定 digest tag |
+| `10-golden.yaml` | `image` registry 前缀 | `k3d-places-reg:5500/places/builder:dev` | 替换为集群 registry 前缀 |
+| `11-etl-cronjob.yaml` | `image` registry 前缀 / tag | `k3d-places-reg:5500/places/builder:dev` | 替换为固定 digest tag(如 `builder:202506XXXXXX`) |
+| `11-etl-cronjob.yaml` | REGISTRY env | `k3d-places-reg:5000/places` | 替换为集群 registry 前缀 |
+| `13-backup-cronjob.yaml` | `image` registry 前缀 | `k3d-places-reg:5500/places/builder:dev` | 钉固定 digest tag |
+| `13-backup-cronjob.yaml` | 调度时间 / KEEP | `0 1 * * *` / `7` | 生产可改 `14` 或 `30` |
+| `14-nominatim-data-cronjob.yaml` | `PBF_URL` | 柬埔寨 PBF | 真集群调整目标区域 URL |
+| `14-nominatim-data-cronjob.yaml` | 两处 `image` | `k3d-places-reg:5500/places/...` | 钉固定 digest(生产) |
+| `14-nominatim-data-cronjob.yaml` | emptyDir `sizeLimit` | `8Gi` | 真集群建议改为独立 PVC |
+| `99-minio-k3d.yaml` | minio `image` | `minio/minio:RELEASE.2025-04-22T22-12-26Z` | 仅 k3d 用;真集群改用已有 S3,删除此文件 |
+| `99-minio-k3d.yaml` | MinIO 凭据 env | 明文 `placesminio` | 仅 k3d 本地验证;真集群必须改用 Secret |
+
+**一键替换 registry 前缀示例**(无需 Kustomize):
+
+```bash
+# 将所有 manifest 中的 k3d-places-reg:5500/places 替换为真集群 registry 前缀
+OLD="k3d-places-reg:5500/places"
+NEW="registry.example.com/places"
+grep -rl "$OLD" deploy/k8s/ | xargs sed -i "s|$OLD|$NEW|g"
+```
+
+---
+
+### 节点前提(NODE PREREQ)
+
+在目标节点上执行以下操作后再 apply manifests:
+
+```bash
+# 1. OpenSearch 必须:vm.max_map_count >= 262144
+sudo sysctl -w vm.max_map_count=262144
+echo 'vm.max_map_count=262144' | sudo tee /etc/sysctl.d/99-places.conf
+
+# 2. k3d 默认 StorageClass:local-path(已内置,无需额外安装)
+#    真集群:确认 storageClassName 存在:kubectl get storageclass
+
+# 3. k3d 默认 ingressClassName:traefik(已内置)
+#    真集群:确认 ingressClassName 对应 controller:kubectl get ingressclass
+
+# 4. Registry 地址约定(k3d 本地):
+#    宿主机推送:  localhost:5500  (k3d 宿主端口映射)
+#    集群内拉取:  k3d-places-reg:5000  (containerd 内部 DNS,manifests 里用此地址)
+#    kaniko 构建后推送必须用集群内地址:k3d-places-reg:5000/places/<image>:<tag>
+```
+
+**repository-s3 keystore 一次性注入**(OpenSearch S3 快照仓库):
+
+```bash
+# 注入 S3 凭据到 OpenSearch keystore(Pod 启动后执行一次)
+kubectl -n places exec deploy/opensearch -- bash -c "
+  echo 'placesminio' | opensearch-keystore add --stdin s3.client.default.access_key
+  echo 'placesminio' | opensearch-keystore add --stdin s3.client.default.secret_key
+"
+# 重载 secure settings(无需重启)
+kubectl -n places exec deploy/opensearch -- curl -s -X POST \
+  'http://localhost:9200/_nodes/reload_secure_settings'
+# 注册快照仓库
+kubectl -n places exec deploy/opensearch -- curl -s -X PUT \
+  'http://localhost:9200/_snapshot/s3-backup' \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"s3","settings":{"bucket":"places","base_path":"opensearch-snapshots"}}'
+```
+
+---
+
+### 引导顺序 Runbook
+
+完整引导顺序对应 spec §8。每步用 `kubectl wait` 确认就绪后再继续。
+
+```bash
+# ── 步骤 0:前提 ─────────────────────────────────────────────────
+# 复制并填写 secrets(不入库)
+cp deploy/k8s/01-secrets.example.yaml deploy/k8s/01-secrets.yaml
+# 编辑 01-secrets.yaml,填入真实密码和 S3 凭据
+
+# ── 步骤 1:Secrets ──────────────────────────────────────────────
+kubectl apply -f deploy/k8s/00-namespace.yaml
+kubectl apply -f deploy/k8s/01-secrets.yaml
+
+# ── 步骤 2:基座层(PostGIS / OpenSearch / RBAC)────────────────
+kubectl apply -f deploy/k8s/02-postgis.yaml
+kubectl apply -f deploy/k8s/03-opensearch.yaml
+kubectl apply -f deploy/k8s/12-rbac.yaml
+kubectl wait pod -l app=postgis    -n places --for=condition=Ready --timeout=120s
+kubectl wait pod -l app=opensearch -n places --for=condition=Ready --timeout=180s
+
+# ── 步骤 3:migrate Job ──────────────────────────────────────────
+kubectl apply -f deploy/k8s/09-jobs.yaml
+kubectl wait job/migrate -n places --for=condition=Complete --timeout=120s
+
+# ── 步骤 4:首次数据引导 Job ──────────────────────────────────────
+# bootstrap-data Job 跑 ETL + OpenSearch 索引(首次,跳过漂移闸)
+# 预计 20-40 分钟(柬埔寨全量 OSM + Overture)
+kubectl wait job/bootstrap-data -n places --for=condition=Complete --timeout=3600s
+
+# ── 步骤 5:引擎层(Nominatim / Valhalla / OSRM)───────────────
+kubectl apply -f deploy/k8s/04-nominatim.yaml
+kubectl apply -f deploy/k8s/05-valhalla.yaml
+kubectl apply -f deploy/k8s/06-osrm.yaml
+kubectl wait pod -l app=nominatim -n places --for=condition=Ready --timeout=900s
+kubectl wait pod -l app=valhalla  -n places --for=condition=Ready --timeout=300s
+kubectl wait pod -l app=osrm-car  -n places --for=condition=Ready --timeout=120s
+
+# ── 步骤 6:Gateway + Ingress ────────────────────────────────────
+kubectl apply -f deploy/k8s/07-gateway.yaml
+kubectl apply -f deploy/k8s/08-ingress.yaml
+kubectl wait pod -l app=gateway -n places --for=condition=Ready --timeout=60s
+
+# ── 步骤 7:验收 ─────────────────────────────────────────────────
+kubectl apply -f deploy/k8s/10-golden.yaml
+kubectl wait job/golden -n places --for=condition=Complete --timeout=120s
+kubectl logs job/golden -n places | tail -5
+# 期望输出:18/18 PASS
+
+# ── 可选:CronJob + MinIO(k3d)+ 监控 ──────────────────────────
+kubectl apply -f deploy/k8s/11-etl-cronjob.yaml
+kubectl apply -f deploy/k8s/13-backup-cronjob.yaml
+kubectl apply -f deploy/k8s/14-nominatim-data-cronjob.yaml
+kubectl apply -f deploy/k8s/99-minio-k3d.yaml   # 仅 k3d 本地验证
+kubectl apply -f deploy/k8s/15-monitoring.yaml  # 需 Prometheus Operator CRD(见监控接法)
+```
+
+**本地 k3d 一键验证**:
+
+```bash
+# 脚本封装上述完整流程,含 k3d 集群/registry 创建
+bash scripts/k3d_up.sh
+```
+
+> 重跑 Job:`kubectl -n places delete job <name> && kubectl apply -f deploy/k8s/09-jobs.yaml`
+
+---
+
+### 运维速查
+
+#### 扩容
+
+```bash
+# 手动扩容 OSRM(即起即服务,新 Pod 就绪约 8s)
+kubectl scale deployment osrm-car -n places --replicas=2
+
+# Gateway HPA(CPU 70% 触发,2-6 副本)——会自动扩缩
+kubectl get hpa gateway -n places
+
+# 查看 endpoints 是否已更新
+kubectl get endpoints gateway -n places
+```
+
+#### 滚动发布数据(周更)
+
+```bash
+# 方式 A:手动触发一次周更 CronJob
+kubectl create job --from=cronjob/etl-pipeline manual-etl-$(date +%s) -n places
+
+# 方式 B:仅更新特定 Deployment 的数据镜像(已有新 tag)
+kubectl set image deployment/osrm-car  osrm-car=registry.example.com/places/osrm-data-car:202506141200  -n places
+kubectl set image deployment/osrm-moto osrm-moto=registry.example.com/places/osrm-data-moto:202506141200 -n places
+kubectl set image deployment/osrm-tuktuk osrm-tuktuk=registry.example.com/places/osrm-data-tuktuk:202506141200 -n places
+kubectl set image deployment/valhalla  valhalla=registry.example.com/places/valhalla-data:202506141200   -n places
+
+# 查看滚动进度(maxUnavailable=0 保证零中断)
+kubectl rollout status deployment/osrm-car -n places
+```
+
+#### 回滚
+
+```bash
+# 回滚到上一个数据版本(任意引擎)
+kubectl rollout undo deployment/osrm-car   -n places
+kubectl rollout undo deployment/valhalla   -n places
+
+# 查看历史修订
+kubectl rollout history deployment/osrm-car -n places
+```
+
+#### 备份与恢复
+
+- **备份**:由 `13-backup-cronjob.yaml` 每日 01:30 触发,`pg_dump → S3`,保留 7 份。
+- **OpenSearch 快照**:S3 repository-s3 仓库(`_snapshot/s3-backup`),快照 CronJob 同步保留 7 份。路由图数据镜像不备份——tag 不可变,可直接从 registry 重得(方案 A 红利)。
+- **恢复**:参见 `scripts/restore.sh`(单机 compose 版本参考流程);K8s 形态下 PostgreSQL 恢复从 S3 下载 dump 执行 `pg_restore`,OpenSearch 恢复执行 `_snapshot/s3-backup/<name>/_restore`。
+
+#### 周更管道(CronJob)
+
+`11-etl-cronjob.yaml` 默认每周日 02:00 触发,执行完整六步(ETL → 漂移闸 → 索引 → kaniko 构建镜像 → `kubectl set image` → golden 验收)。漂移闸(±15%)不过则 CronJob 以非零退出,由集群告警捕获。
+
+---
+
+### 监控接法
+
+根据集群是否安装 Prometheus Operator 二选一:
+
+#### 方案 A:ServiceMonitor + PrometheusRule(有 Operator)
+
+适用集群已安装 `kube-prometheus-stack` 或 Prometheus Operator。
+
+```bash
+kubectl apply -f deploy/k8s/15-monitoring.yaml
+```
+
+`15-monitoring.yaml` 包含:
+- **ServiceMonitor**:告知 Operator 每 15s 抓取 gateway Service 的 `:8080/metrics`。
+- **PrometheusRule**:四条告警规则原文移植自 M5(`deploy/prometheus/rules.yml`),比例分母过滤 `/metrics|/healthz|_unmatched` 防低流量误报。
+
+> 注意:bare k3d 无 Operator CRD,`kubectl apply` 会报 "no matches for kind" — 属预期。真实集群安装 kube-prometheus-stack 后 CRD 即存在,apply 正常。
+
+#### 方案 B:pod annotations(无 Operator)
+
+若集群以 helm chart 或静态配置部署 Prometheus(无 `monitoring.coreos.com` CRD):
+
+1. 在 `07-gateway.yaml` 的 `Deployment.spec.template.metadata` 下增加 annotations:
+
+```yaml
+annotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+```
+
+2. 将 `deploy/prometheus/rules.yml` 中的四条规则内容加入 Prometheus 服务端 rule 文件(helm values 的 `serverFiles.alerting_rules.yml` 或静态 `rules/` 目录)。
+
+方案 B 下无需 apply `15-monitoring.yaml`。两套接法在该文件中均有注释说明。
+
+---
+
+### 验收记录(本地 k3d 实测)
+
+| # | 验收项 | 结果 |
+|---|--------|------|
+| 1 | 全栈部署:golden 测试集 | 18/18 PASS(K8s 网关,AUTH 开,经 port-forward) |
+| 2 | 数据滚动零中断 | re-tag → `kubectl set image`(maxUnavailable=0),滚动期间持续请求 **0 真实失败**(port-forward 工件已排除);surge 期间旧 Pod 继续服务至新 Pod Ready |
+| 3 | 回滚验证 | `kubectl rollout undo` → golden 18/18 PASS(DRIVE 200 OK) |
+| 4 | 横向扩容 | `osrm-car replicas=2`,第 2 个 Pod **8.2s Ready**,endpoints=2,HPA `ScalingActive=True` |
+| 5 | 周更管道 | kaniko 无特权构建已证(executor 设计如此) ✓;全量 ETL 构建延后真集群执行 |
+| 假设④ | OpenSearch repository-s3 快照 | state=SUCCESS(keystore 注入 + 插件安装验证) |
+
+---
+
+### 已知限制 / 延后到真集群
+
+- **dev box 磁盘 96-97%** 是本地验证的环境约束(非设计缺陷),限制了 k3d 内全量 PBF 处理与全量 kaniko 构建的执行。
+- **OpenSearch watermark 本地覆盖**:本地 k3d 将 flood/high/low watermark 临时调高以绕过 96% 磁盘限制;真集群使用 OpenSearch 默认值(85%/90%/95%)无需覆盖。
+- **单机 compose 回退已不可用**:M6 期间卷/备份数据在磁盘事故中清理;M6 目标为完整 K8s 化,compose 形态不再维护,不影响 M6 验收。
+
+**延后到真集群执行的项**:
+- 全量 ETL(Overture + OSM 完整 PBF 拉取 + 入库)
+- kaniko 全量数据镜像重建(OSRM×3 + Valhalla 完整路由图)
+- 端到端周更管道闭环一轮(验收 #5 的全量路径)
+- Nominatim 全量导入(完整 PBF 约 5-15 分钟 + S3 打包)
+- HPA 真实负载压测触发扩容(dev box 资源不足以稳定触发)
+
+---
+
 ## M6 候选清单
 
 以下改进项已在 M5 终审确认在外，记录为 M6 候选（README 注明，不影响 M5 验收）：

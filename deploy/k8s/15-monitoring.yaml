@@ -1,0 +1,114 @@
+# deploy/k8s/15-monitoring.yaml — 监控接法:ServiceMonitor/PrometheusRule (Operator) 或 pod-annotations (无 Operator)
+#
+# 两套接法二选一——根据集群是否安装 Prometheus Operator 决定：
+#
+#   方案 A(本文件主体):ServiceMonitor + PrometheusRule
+#     适用:集群已安装 kube-prometheus-stack / Prometheus Operator
+#     要求:monitoring.coreos.com CRD 存在
+#     注意:bare k3d(无 Operator)执行 kubectl apply 会报 "no matches for kind" — 属预期,
+#           真实集群安装 kube-prometheus-stack 后 CRD 即存在,apply 正常
+#
+#   方案 B(本文件末尾注释):pod annotations + Prometheus scrape-config
+#     适用:无 Operator 的集群,Prometheus 以 helm chart 或静态配置部署
+#     做法:把注释中的 annotations 片段添加到 07-gateway.yaml 的 pod template,
+#           告警规则放入 Prometheus 服务端的 rules/ 目录(文本内容与 M5 rules.yml 相同)
+#
+# ─────────────────────────────────────────────
+# 方案 A:ServiceMonitor + PrometheusRule
+# ─────────────────────────────────────────────
+#
+# ServiceMonitor — 告知 Prometheus Operator 从 gateway Service 的 8080 端口抓取 /metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gateway
+  namespace: places
+  labels:
+    # 须与 kube-prometheus-stack 的 serviceMonitorSelector 匹配;默认 release label 即可
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app: gateway
+  endpoints:
+    - port: "8080"        # 对应 07-gateway.yaml Service 的 port 名或 port 号
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - places
+---
+# PrometheusRule — 移植 M5 四条告警规则(原文原样;比例分母过滤 /metrics|/healthz|_unmatched)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: places-alerts
+  namespace: places
+  labels:
+    release: kube-prometheus-stack
+    role: alert-rules
+spec:
+  groups:
+    - name: places
+      rules:
+        # 5xx 比例 >5% 持续 5 分钟
+        # 分母过滤 /metrics、/healthz、_unmatched 防低流量误报;clamp_min 防除零
+        - alert: GatewayHighErrorRate
+          expr: >
+            sum(rate(gateway_http_requests_total{status=~"5..",path!~"/metrics|/healthz|_unmatched"}[5m]))
+              / clamp_min(sum(rate(gateway_http_requests_total{path!~"/metrics|/healthz|_unmatched"}[5m])), 0.001) > 0.05
+          for: 5m
+          labels: {severity: critical}
+          annotations: {summary: "5xx 比例 >5% 持续 5 分钟"}
+
+        # 上游后端错误率 >0.5/s 持续 5 分钟
+        - alert: BackendErrorsSpiking
+          expr: sum(rate(gateway_backend_errors_total[5m])) > 0.5
+          for: 5m
+          labels: {severity: warning}
+          annotations: {summary: "上游后端错误率异常"}
+
+        # ZERO_RESULTS 比例 >30% 持续 15 分钟(数据质量哨兵)
+        # 分母同样过滤噪音路径
+        - alert: ZeroResultsSurge
+          expr: >
+            sum(rate(gateway_zero_results_total[15m]))
+              / clamp_min(sum(rate(gateway_http_requests_total{path!~"/metrics|/healthz|_unmatched"}[15m])), 0.001) > 0.3
+          for: 15m
+          labels: {severity: warning}
+          annotations: {summary: "ZERO_RESULTS 比例 >30%——数据质量哨兵(spec §9)"}
+
+        # P99 延迟 >10s 持续 10 分钟
+        - alert: GatewayP99High
+          expr: histogram_quantile(0.99, sum(rate(gateway_http_request_duration_seconds_bucket[5m])) by (le)) > 10
+          for: 10m
+          labels: {severity: warning}
+          annotations: {summary: "P99 延迟 >10s"}
+
+# ─────────────────────────────────────────────
+# 方案 B:pod annotations(无 Prometheus Operator)
+# ─────────────────────────────────────────────
+#
+# 若集群 **没有** Prometheus Operator(即无 monitoring.coreos.com CRD),
+# 删除/跳过上面的方案 A,改用以下步骤:
+#
+# 步骤 1 — 在 07-gateway.yaml 的 Deployment.spec.template.metadata 下加入以下 annotations:
+#
+#   metadata:
+#     labels:
+#       app: gateway
+#     annotations:
+#       prometheus.io/scrape: "true"
+#       prometheus.io/port: "8080"
+#       prometheus.io/path: "/metrics"
+#
+# (不修改 Service;Prometheus 通过 pod 级 scrape-config 即可发现)
+#
+# 步骤 2 — 将 M5 规则文件(deploy/prometheus/rules.yml)部署到 Prometheus 服务端:
+#   a) helm chart 安装:在 values.yaml 的 serverFiles.alerting_rules.yml 中填入规则内容
+#   b) 静态部署:将 rules.yml 复制到 Prometheus 配置目录并在 prometheus.yml 中 rule_files: 引用
+#
+# 方案 B 下此文件不需要 kubectl apply(annotations 贴入 07-gateway.yaml 即可,无独立资源)。
+#
+# 四条规则原文见 deploy/prometheus/rules.yml(比例分母过滤说明同上)。
