@@ -1,0 +1,41 @@
+# deploy/k8s/10-golden.yaml — golden smoke Job (M6-T4 验收 #1)
+# Mounts updated run_golden.py (with --api-key flag) from ConfigMap golden-runner;
+# cases.yaml is baked in builder image at /app/golden/cases.yaml.
+# RE-RUN: kubectl -n places delete job golden-smoke && kubectl apply -f deploy/k8s/10-golden.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: golden-smoke
+  namespace: places
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: golden
+          image: k3d-places-reg:5500/places/builder:dev  # EDIT-ME: registry 前缀
+          imagePullPolicy: Always
+          command: ["python", "/app/golden/run_golden.py",
+                    "--base-url", "http://gateway:8080",
+                    "--api-key", "$(GOLDEN_API_KEY)"]
+          env:
+            - name: GOLDEN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: golden-api-key
+                  key: API_KEY
+          volumeMounts:
+            - name: golden-runner
+              mountPath: /app/golden/run_golden.py
+              subPath: run_golden.py
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+      volumes:
+        - name: golden-runner
+          configMap:
+            name: golden-runner

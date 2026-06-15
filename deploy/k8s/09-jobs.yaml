@@ -1,0 +1,58 @@
+# deploy/k8s/09-jobs.yaml — one-shot Jobs
+# migrate: runs on initial deploy and schema upgrades (runs db/migrations/*.sql via ConfigMap/migrations)
+# bootstrap-data: ETL 全量引导 Job (uses ConfigMap/etl-mappings for mappings.json override)
+# Golden smoke test and other Jobs: see 10-golden.yaml
+# RE-RUN: kubectl -n places delete job migrate && kubectl apply -f deploy/k8s/09-jobs.yaml
+apiVersion: batch/v1
+kind: Job
+metadata: {name: migrate, namespace: places}
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: postgis/postgis:16-3.4
+          command: ["bash", "-c"]
+          args:
+            - for f in /migrations/*.sql; do echo "applying $f";
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -h postgis -U places -d places -v ON_ERROR_STOP=1 -f "$f" || exit 1; done
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: places-secrets, key: POSTGRES_PASSWORD}}
+          volumeMounts: [{name: migrations, mountPath: /migrations}]
+      volumes:
+        - name: migrations
+          configMap: {name: migrations}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: bootstrap-data, namespace: places}
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      serviceAccountName: places-pipeline
+      containers:
+        - name: bootstrap
+          image: k3d-places-reg:5500/places/builder:dev
+          imagePullPolicy: Always
+          command: ["bash", "/app/k8s_pipeline.sh"]
+          env:
+            - {name: PIPELINE_MODE, value: bootstrap}
+            - {name: BOOTSTRAP_SKIP_DRIFT, value: "1"}
+            - {name: OPENSEARCH_URL, value: "http://opensearch:9200"}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: places-secrets, key: POSTGRES_PASSWORD}}
+            - {name: DATABASE_URL, value: "postgresql://places:$(POSTGRES_PASSWORD)@postgis:5432/places"}
+          envFrom: [{secretRef: {name: s3-cred}}]
+          resources: {requests: {memory: 512Mi}, limits: {memory: 6Gi}}
+          volumeMounts:
+            - name: etl-mappings
+              mountPath: /usr/local/lib/python3.11/site-packages/etl/mappings.json
+              subPath: mappings.json
+      volumes:
+        - name: etl-mappings
+          configMap: {name: etl-mappings}

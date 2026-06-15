@@ -1,0 +1,179 @@
+# deploy/k8s/13-backup-cronjob.yaml — 每日备份 CronJob (M6-T6)
+#
+# 策略:
+#   pg_dump -Fc → mc pipe → MinIO s3/places-artifacts/backups/pg/places-<TS>.dump
+#   OpenSearch S3 快照 → MinIO s3/places-artifacts/os-snapshots/ (repository-s3 插件)
+#   路由图不备份——由数据镜像 tag 可重建(方案A红利)
+#   保留策略:KEEP=7,同 M5 备份脚本 scripts/backup.sh
+#
+# OpenSearch S3 快照仓库首次注册:
+#   keystore 写入(只需一次):
+#     kubectl -n places exec opensearch-0 -- bash -c \
+#       'echo "<key>" | opensearch-keystore add --stdin --force s3.client.default.access_key && \
+#        echo "<secret>" | opensearch-keystore add --stdin --force s3.client.default.secret_key'
+#     kubectl -n places exec opensearch-0 -- \
+#       curl -s -X POST http://localhost:9200/_nodes/reload_secure_settings
+#   仓库注册(幂等,CronJob 脚本每次执行):
+#     PUT _snapshot/places-s3-backup 含 region=us-east-1 (MinIO 兼容参数)
+#   已 LIVE 验证: snap-20260615131544 state=SUCCESS (2026-06-15)
+#
+# ─── K8s Restore Runbook ────────────────────────────────────────────────────
+# PG 恢复:
+#   1. 确认 S3 dump 存在: mc ls s3/places-artifacts/backups/pg/
+#   2. 恢复到临时 pod:
+#      kubectl -n places run pg-restore --restart=Never \
+#        --image=k3d-places-reg:5500/places/builder:dev -- bash -c '
+#        mc alias set s3 "$S3_ENDPOINT" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
+#        mc pipe s3/${S3_BUCKET}/backups/pg/places-<TS>.dump | \
+#          pg_restore -h postgis -U places -d places --clean --if-exists -Fc'
+#
+# OpenSearch 快照恢复(M5 原则:先确认 SUCCESS 再删索引):
+#   1. 查快照状态:
+#      curl -s http://opensearch:9200/_snapshot/places-s3-backup/snap-<TS>
+#      → 确认 state=SUCCESS 后再继续
+#   2. 关闭目标索引(避免冲突):
+#      curl -X POST http://opensearch:9200/places-*/_close
+#   3. 执行恢复:
+#      curl -X POST http://opensearch:9200/_snapshot/places-s3-backup/snap-<TS>/_restore \
+#        -H 'Content-Type: application/json' \
+#        -d '{"indices": "places-*", "include_global_state": false}'
+#   4. 等待恢复完成:
+#      curl http://opensearch:9200/_cluster/health?wait_for_status=green&timeout=60s
+# ────────────────────────────────────────────────────────────────────────────
+#
+# serviceAccountName: 不设(备份 Job 仅通过网络访问 PG/OS/MinIO,不调 K8s API)
+# concurrencyPolicy: Forbid — 防止上次未完成时重叠运行
+# EDIT-ME: registry 前缀、调度时间、KEEP 值(真集群可改 14 或 30)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-daily
+  namespace: places
+spec:
+  # 每日 02:00 UTC (柬埔寨时间 09:00,流量低谷)
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  # 宕机恢复后错过超过 2h 则跳过,避免补跑并发写
+  startingDeadlineSeconds: 7200
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # 备份全流程 timeout: 1h (pg_dump ~108k行 + OS快照 < 10min;留足余量)
+      activeDeadlineSeconds: 3600
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: backup-daily
+        spec:
+          restartPolicy: Never
+          # 备份 Job 不调 K8s API,无需 SA (uses default SA with no extra RBAC)
+          containers:
+            - name: backup
+              # builder:dev 含 pg_dump(postgres-client) + mc(MinIO client)
+              # EDIT-ME: 生产钉固定 digest tag,如 builder:202506XXXXXX
+              image: k3d-places-reg:5500/places/builder:dev
+              imagePullPolicy: Always
+              command: ["bash", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  KEEP=7
+                  TS=$(date +%Y%m%d%H%M%S)
+
+                  echo "=== [1/4] mc alias setup ==="
+                  mc alias set s3 "$S3_ENDPOINT" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
+
+                  echo "=== [2/4] pg_dump → MinIO ($TS) ==="
+                  PGPASSWORD="$POSTGRES_PASSWORD" pg_dump \
+                    -h postgis -U places -d places -Fc \
+                    | mc pipe "s3/${S3_BUCKET}/backups/pg/places-${TS}.dump"
+                  echo "pg dump uploaded: backups/pg/places-${TS}.dump"
+
+                  echo "=== [3/4] OpenSearch S3 snapshot ==="
+                  OS_URL="http://opensearch:9200"
+                  REPO="places-s3-backup"
+
+                  # 注册快照仓库(幂等;region=us-east-1 是 MinIO 兼容所需)
+                  curl -sf -X PUT "${OS_URL}/_snapshot/${REPO}" \
+                    -H 'Content-Type: application/json' \
+                    -d "{
+                      \"type\": \"s3\",
+                      \"settings\": {
+                        \"bucket\": \"${S3_BUCKET}\",
+                        \"base_path\": \"os-snapshots\",
+                        \"endpoint\": \"minio.places.svc:9000\",
+                        \"protocol\": \"http\",
+                        \"path_style_access\": \"true\",
+                        \"region\": \"us-east-1\"
+                      }
+                    }"
+                  echo "repo registered/verified"
+
+                  # 触发快照并等待完成(同步)
+                  SNAP_RESULT=$(curl -sf -X PUT \
+                    "${OS_URL}/_snapshot/${REPO}/snap-${TS}?wait_for_completion=true" \
+                    -H 'Content-Type: application/json' \
+                    -d '{"indices": "*", "ignore_unavailable": true, "include_global_state": false}')
+                  echo "$SNAP_RESULT"
+
+                  # M5 原则: 确认 SUCCESS 后才继续(否则 exit1 → Job 重试/告警)
+                  SNAP_STATE=$(echo "$SNAP_RESULT" | python3 -c \
+                    "import sys,json; print(json.load(sys.stdin)['snapshot']['state'])" 2>/dev/null || echo "UNKNOWN")
+                  if [ "$SNAP_STATE" != "SUCCESS" ]; then
+                    echo "ERROR: snapshot state=${SNAP_STATE}, expected SUCCESS" >&2
+                    exit 1
+                  fi
+                  echo "OS snapshot snap-${TS} state=SUCCESS"
+
+                  echo "=== [4/4] Retention pruning (KEEP=${KEEP}) ==="
+
+                  # PG dumps: mc ls 按时间排序,prune 超出 KEEP 的旧条目
+                  PG_COUNT=$(mc ls "s3/${S3_BUCKET}/backups/pg/" 2>/dev/null | wc -l || echo 0)
+                  if [ "$PG_COUNT" -gt "$KEEP" ]; then
+                    PRUNE_N=$(( PG_COUNT - KEEP ))
+                    echo "Pruning ${PRUNE_N} old PG dump(s)..."
+                    mc ls "s3/${S3_BUCKET}/backups/pg/" \
+                      | sort | head -n "$PRUNE_N" \
+                      | awk '{print $NF}' \
+                      | while read fname; do
+                          mc rm "s3/${S3_BUCKET}/backups/pg/${fname}" && echo "removed pg dump: ${fname}"
+                        done
+                  fi
+
+                  # OS snapshots: LIST → sort by name (含时间戳) → prune oldest
+                  OS_SNAPS=$(curl -sf "${OS_URL}/_snapshot/${REPO}/_all" \
+                    | python3 -c "
+                  import sys,json
+                  snaps=json.load(sys.stdin).get('snapshots',[])
+                  names=[s['snapshot'] for s in sorted(snaps, key=lambda s: s['snapshot'])]
+                  print('\n'.join(names))
+                  " 2>/dev/null || true)
+                  OS_COUNT=$(echo "$OS_SNAPS" | grep -c . || echo 0)
+                  if [ "$OS_COUNT" -gt "$KEEP" ]; then
+                    PRUNE_N=$(( OS_COUNT - KEEP ))
+                    echo "Pruning ${PRUNE_N} old OS snapshot(s)..."
+                    echo "$OS_SNAPS" | head -n "$PRUNE_N" | while read snap_name; do
+                      curl -sf -X DELETE "${OS_URL}/_snapshot/${REPO}/${snap_name}" >/dev/null \
+                        && echo "deleted OS snapshot: ${snap_name}" || true
+                    done
+                  fi
+
+                  echo "=== BACKUP DONE: TS=${TS} ==="
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: places-secrets
+                      key: POSTGRES_PASSWORD
+              envFrom:
+                - secretRef:
+                    name: s3-cred
+              resources:
+                requests:
+                  memory: 256Mi
+                  cpu: 200m
+                limits:
+                  memory: 512Mi
+                  cpu: "1"

@@ -1,0 +1,4 @@
+data/
+deploy/docker/
+deploy/k8s/
+logs/

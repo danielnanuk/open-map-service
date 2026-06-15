@@ -1,0 +1,149 @@
+# deploy/k8s/14-nominatim-data-cronjob.yaml — Nominatim 数据月更 CronJob (M6-T6)
+#
+# ⚠️  DEFERRED: 全量 import 重度操作(~4min+, 需 ≥4Gi 磁盘,对 PG 写密集)
+#     此 manifest 已通过 kubectl apply --dry-run=server 结构验证。
+#     真实 import 须在磁盘充足(≥10Gi)、独立 PVC 的真集群中执行。
+#     本地 k3d 验证环境 DO NOT RUN(96% disk,~4.2G free)。
+#
+# ⚠️  已知限制:月更 initContainer 跳过逻辑导致静默 no-op
+#     04-nominatim.yaml 的 initContainer 检测到 /nomdata/PG_VERSION 存在即跳过下载与解包。
+#     本 CronJob 执行流程:patach ConfigMap nominatim-data-version(新包名) → rollout restart →
+#     新 Pod 启动 → initContainer 发现 PVC 内已有 PG_VERSION(旧数据) → 直接跳过 → 月更静默 no-op。
+#     修复方向(真集群实施前必须解决):
+#       方案 A: initContainer 改为比较 PACKAGE 版本号(读 ConfigMap 与 PVC 内缓存版本对比)
+#       方案 B: 月更 Job 在 rollout restart 前先清空 PVC(或使用独立 PVC + 滚动切换)
+#     在上述修复落地之前,月更 CronJob 结构正确但实际不会替换 Nominatim 数据。
+#
+# 月更流程:
+#   initContainers:
+#     1. fetch-pbf: 下载 Cambodia PBF (geofabrik ~100MB) → /pbf
+#     2. nominatim-import: mediagis/nominatim:4.4 import PBF → PG data dir /pgdata (共享卷)
+#   containers:
+#     3. builder (主容器): tar --zstd /pgdata → nominatim-data-<TS>.tar.zst
+#                         mc cp → MinIO nominatim-data-<TS>.tar.zst (bucket root)
+#                         kubectl patch configmap nominatim-data-version .data.PACKAGE
+#                         kubectl rollout restart deploy/nominatim
+#
+# 上传路径: s3/<S3_BUCKET>/nominatim-data-<TS>.tar.zst
+#   与 04-nominatim.yaml initContainer 拉包路径一致(bucket root,无子目录)
+#
+# K8s API 权限: 需 configmaps get/patch + deployments patch/update
+#   12-rbac.yaml places-pipeline Role 已覆盖(configmaps get/patch;deployments get/list/watch/patch/update)
+#
+# serviceAccountName: places-pipeline (RBAC 覆盖 configmaps patch + deployments patch)
+#
+# EDIT-ME: PBF_URL 指向目标区域的 PBF(当前为柬埔寨);真集群调整调度时间
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nominatim-data-monthly
+  namespace: places
+spec:
+  # 每月 1 日 04:00 UTC (柬埔寨时间 11:00)
+  schedule: "0 4 1 * *"
+  concurrencyPolicy: Forbid
+  # 宕机恢复后错过超过 24h 则跳过
+  startingDeadlineSeconds: 86400
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      # 全量 import + upload timeout: 2h
+      activeDeadlineSeconds: 7200
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app: nominatim-monthly
+        spec:
+          restartPolicy: Never
+          serviceAccountName: places-pipeline
+          initContainers:
+            # 步骤 1: 下载 Cambodia PBF → /pbf
+            - name: fetch-pbf
+              image: alpine:3.20
+              command: ["sh", "-c"]
+              args:
+                - |
+                  apk add --no-cache wget >/dev/null
+                  echo "Downloading Cambodia PBF..."
+                  wget -q -O /pbf/cambodia-latest.osm.pbf \
+                    "https://download.geofabrik.de/asia/cambodia-latest.osm.pbf"
+                  ls -lh /pbf/cambodia-latest.osm.pbf
+                  echo "PBF downloaded OK"
+              volumeMounts:
+                - {name: pbf, mountPath: /pbf}
+              resources:
+                requests: {memory: 64Mi, cpu: 50m}
+                limits: {memory: 256Mi}
+
+            # 步骤 2: Nominatim import → /pgdata (共享 pgdata-scratch 卷)
+            # ⚠️  DEFERRED: 此步骤在真集群中运行;本地 k3d 不执行
+            # mediagis entrypoint 检测到 local file:// PBF → 直接 import;import 完成后
+            # PG data dir 写入 /pgdata,由后续主容器打包上传。
+            # EDIT-ME: 钉固定 digest(生产)
+            - name: nominatim-import
+              image: mediagis/nominatim:4.4
+              env:
+                - {name: NOMINATIM_PASSWORD, value: nominatim_places}
+                - {name: IMPORT_WIKIPEDIA, value: "false"}
+                - {name: IMPORT_TIGER_ADDRESSES, value: "false"}
+                # PBF_URL 使用 local file:// (PBF 由 fetch-pbf initContainer 下载到 /pbf)
+                - {name: PBF_URL, value: "file:///pbf/cambodia-latest.osm.pbf"}
+              volumeMounts:
+                - {name: pbf, mountPath: /pbf}
+                - {name: pgdata-scratch, mountPath: /pgdata}
+              resources:
+                # import ~100MB PBF → ~2-4Gi PG data; heap 需 2Gi+
+                # DEFERRED: 真集群按实测调整
+                requests: {memory: 2Gi, cpu: "1"}
+                limits: {memory: 6Gi, cpu: "4"}
+
+          containers:
+            # 步骤 3-5: 打包 + 上传 + 更新 ConfigMap + rollout restart
+            # builder 镜像含 mc + kubectl + zstd + tar;mediagis 镜像无这些工具
+            # EDIT-ME: 钉固定 digest(生产)
+            - name: builder
+              image: k3d-places-reg:5500/places/builder:dev
+              command: ["bash", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  TS=$(date +%Y%m%d%H%M%S)
+                  PACKAGE="nominatim-data-${TS}.tar.zst"
+                  echo "=== [3/5] Packaging pgdata → ${PACKAGE} ==="
+                  tar --zstd -cf /tmp/${PACKAGE} -C /pgdata .
+                  ls -lh /tmp/${PACKAGE}
+
+                  echo "=== [4/5] Upload to MinIO ==="
+                  mc alias set s3 "$S3_ENDPOINT" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
+                  mc cp /tmp/${PACKAGE} "s3/${S3_BUCKET}/${PACKAGE}"
+                  echo "Uploaded: ${PACKAGE}"
+
+                  echo "=== [5/5] Patch ConfigMap + rollout restart ==="
+                  # patch nominatim-data-version ConfigMap → 新包名
+                  # 04-nominatim.yaml initContainer 读取 PACKAGE key 拉包解压
+                  kubectl -n places patch configmap nominatim-data-version \
+                    --type merge \
+                    -p "{\"data\":{\"PACKAGE\":\"${PACKAGE}\"}}"
+                  echo "ConfigMap patched: PACKAGE=${PACKAGE}"
+
+                  # rollout restart → initContainer 拉新包解压 → 新 Pod 生效
+                  kubectl -n places rollout restart deploy/nominatim
+                  kubectl -n places rollout status deploy/nominatim --timeout=300s
+                  echo "=== DONE: nominatim updated to ${PACKAGE} ==="
+              envFrom:
+                - secretRef:
+                    name: s3-cred
+              volumeMounts:
+                - {name: pgdata-scratch, mountPath: /pgdata}
+              resources:
+                # tar+zstd 压缩 ~2-4Gi 数据;mc upload;kubectl
+                requests: {memory: 512Mi, cpu: 250m}
+                limits: {memory: 2Gi, cpu: "1"}
+          volumes:
+            - name: pbf
+              emptyDir: {}
+            - name: pgdata-scratch
+              emptyDir:
+                sizeLimit: 8Gi   # EDIT-ME: 真集群建议用独立 PVC 防 emptyDir 超限

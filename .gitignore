@@ -13,3 +13,4 @@ gateway/gateway
 etl/build/
 *.egg-info/
 logs/
+deploy/k8s/01-secrets.yaml

@@ -1,0 +1,21 @@
+# deploy/k8s/08-ingress.yaml — Ingress for gateway
+# EDIT-ME: ingressClassName — change 'traefik' to your cluster's ingress controller (nginx, etc.)
+# EDIT-ME: host — change 'places.local' to your production domain
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gateway
+  namespace: places
+spec:
+  ingressClassName: traefik  # EDIT-ME
+  rules:
+    - host: places.local  # EDIT-ME
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 8080

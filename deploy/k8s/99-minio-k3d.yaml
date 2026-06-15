@@ -1,0 +1,26 @@
+# deploy/k8s/99-minio-k3d.yaml — 仅本地 k3d 验证用;目标集群已有 S3 时不 apply 此文件
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: minio, namespace: places}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: minio}}
+  template:
+    metadata: {labels: {app: minio}}
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:RELEASE.2025-04-22T22-12-26Z  # EDIT-ME: pin 已知发行版;如需更新请锁新 tag
+          args: ["server", "/data"]
+          # EDIT-ME: 仅 k3d 本地验证用明文凭据;真集群必须改用 Secret(01-secrets)
+          env:
+            - {name: MINIO_ROOT_USER, value: placesminio}
+            - {name: MINIO_ROOT_PASSWORD, value: placesminio123}
+          ports: [{containerPort: 9000}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: minio, namespace: places}
+spec:
+  selector: {app: minio}
+  ports: [{port: 9000, targetPort: 9000}]
