@@ -9,7 +9,8 @@
 #   jobs              create/get/list/delete — 创建 kaniko Job + golden Job,等待 + 清理
 #   pods              get/list          — 等待 kaniko Pod 状态(kubectl logs job/xxx)
 #   pods/log          get               — 读取 kaniko / golden 日志
-#   configmaps        get               — 读取 etl-mappings / golden-runner
+#   configmaps        get/patch         — 读取 etl-mappings / golden-runner;
+#                                         patch: T6 月更 CronJob 写回 nominatim-data-version.PACKAGE
 #
 # 注:pipeline 不需要 delete secrets / nodes / clusterroles,负向验证:
 #   kubectl auth can-i delete secrets --as=system:serviceaccount:places:places-pipeline → no
@@ -40,10 +41,11 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
-  # 读取 etl-mappings + golden-runner ConfigMap
+  # 读取 etl-mappings + golden-runner ConfigMap;
+  # patch: nominatim-data-cronjob(T6) 月更后写回 nominatim-data-version.PACKAGE
   - apiGroups: [""]
     resources: ["configmaps"]
-    verbs: ["get"]
+    verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
